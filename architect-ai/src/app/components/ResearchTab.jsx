@@ -21,6 +21,12 @@ export default function ResearchTab({ projectId }) {
 
     try {
       const token = await user.getIdToken();
+      let aiSettings = null;
+      try {
+        const saved = localStorage.getItem("architect_ai_settings");
+        if (saved) aiSettings = JSON.parse(saved);
+      } catch (e) {}
+
       const res = await fetch("/api/research", {
         method: "POST",
         headers: {
@@ -30,10 +36,14 @@ export default function ResearchTab({ projectId }) {
         body: JSON.stringify({
           projectId,
           query: currentQuery,
+          aiSettings
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to perform research");
+      if (!res.ok) {
+         const errData = await res.json();
+         throw new Error(errData.details || "Failed to perform research");
+      }
 
       const data = await res.json();
       setResults(prev => [{
@@ -46,7 +56,7 @@ export default function ResearchTab({ projectId }) {
       console.error("Research error", error);
       setResults(prev => [{
         query: currentQuery,
-        text: "Error: Failed to perform research. Please try again.",
+        text: `Error: ${error.message}. Check your AI Provider settings (Google Search Grounding typically requires the Gemini provider).`,
         isError: true,
         timestamp: new Date().toISOString()
       }, ...prev]);

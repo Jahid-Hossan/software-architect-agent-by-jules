@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { useAuth } from "./AuthProvider";
-import { Menu, Plus, MessageSquare, ListTodo, Search, FileText, ChevronRight, X } from "lucide-react";
+import { Menu, Plus, MessageSquare, ListTodo, Search, FileText, Settings, ChevronRight, X } from "lucide-react";
 import clsx from "clsx";
 import InterviewTab from "./InterviewTab";
 import ResearchTab from "./ResearchTab";
 import RequirementsTab from "./RequirementsTab";
 import BlueprintTab from "./BlueprintTab";
+import SettingsTab from "./SettingsTab";
 
 export default function Workspace() {
   const { user, logOut } = useAuth();
@@ -36,6 +37,7 @@ export default function Workspace() {
     { id: "requirements", label: "Requirements", icon: ListTodo },
     { id: "research", label: "Research", icon: Search },
     { id: "blueprint", label: "Blueprint", icon: FileText },
+    { id: "settings", label: "Settings", icon: Settings },
   ];
 
   return (
@@ -169,6 +171,7 @@ export default function Workspace() {
               {activeTab === "requirements" && <RequirementsTab projectId={activeProjectId} />}
               {activeTab === "research" && <ResearchTab projectId={activeProjectId} />}
               {activeTab === "blueprint" && <BlueprintTab projectId={activeProjectId} requirementsConfirmed={isMockConfirmed} />}
+              {activeTab === "settings" && <SettingsTab />}
             </div>
           </div>
         ) : (

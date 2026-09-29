@@ -19,6 +19,13 @@ export default function BlueprintTab({ projectId, requirementsConfirmed }) {
 
     try {
       const token = await user.getIdToken();
+
+      let aiSettings = null;
+      try {
+        const saved = localStorage.getItem("architect_ai_settings");
+        if (saved) aiSettings = JSON.parse(saved);
+      } catch (e) {}
+
       const res = await fetch("/api/blueprint", {
         method: "POST",
         headers: {
@@ -28,10 +35,14 @@ export default function BlueprintTab({ projectId, requirementsConfirmed }) {
         body: JSON.stringify({
           projectId,
           requirementsHash: "abc123def456", // Mock hash
+          aiSettings
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to generate blueprint");
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.details || "Failed to generate blueprint");
+      }
 
       const data = await res.json();
       setBlueprint({
@@ -41,7 +52,7 @@ export default function BlueprintTab({ projectId, requirementsConfirmed }) {
       });
     } catch (error) {
       console.error("Blueprint generation error", error);
-      setError("Failed to generate blueprint. Please try again.");
+      setError(`Failed to generate blueprint: ${error.message}. Please check your Provider Settings.`);
     } finally {
       setIsGenerating(false);
     }

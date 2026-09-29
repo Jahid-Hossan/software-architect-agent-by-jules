@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
 import { isOwner } from "@/lib/firebase/server";
 import * as admin from "firebase-admin";
+import { executeAiRequest } from "@/lib/ai/routing";
 
 if (!admin.apps?.length) {
   try {
@@ -35,10 +35,7 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { projectId, requirementsHash } = body;
-
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const model = "gemini-2.5-pro";
+    const { projectId, requirementsHash, aiSettings } = body;
 
     const systemInstruction = `You are an Expert Software Architect.
 Your task is to generate a comprehensive, highly detailed software blueprint based on confirmed requirements.
@@ -65,21 +62,33 @@ You MUST follow this exact 17-point structure:
 If a section is not applicable, use "not applicable" with a reason.
 Format the output in clean Markdown.`;
 
-    const response = await ai.models.generateContent({
-      model: model,
-      contents: [{
-        role: 'user',
-        parts: [{ text: "Generate the blueprint for the confirmed requirements (Mock requirements provided in context)." }]
-      }],
-      config: {
-        systemInstruction: systemInstruction,
-        temperature: 0.2,
+    const providers = [];
+    if (aiSettings) {
+      const mapProvider = (type) => {
+        if (type === 'gemini') return { type: 'gemini' };
+        if (type === 'omniroute') return { type: 'omniroute', apiKey: aiSettings.omnirouteApiKey, model: aiSettings.omnirouteModel };
+        if (type === 'self-hosted') return { type: 'self-hosted', baseUrl: aiSettings.selfHostedUrl, apiKey: aiSettings.selfHostedApiKey, model: aiSettings.selfHostedModel };
+        return null;
+      };
+
+      const primary = mapProvider(aiSettings.primaryProvider);
+      if (primary) providers.push(primary);
+
+      if (aiSettings.fallbackProvider && aiSettings.fallbackProvider !== 'none') {
+         const fallback = mapProvider(aiSettings.fallbackProvider);
+         if (fallback) providers.push(fallback);
       }
+    }
+
+    const aiResponse = await executeAiRequest({
+      messages: [{ role: 'user', content: "Generate the blueprint for the confirmed requirements (Mock requirements provided in context)." }],
+      systemInstruction,
+      temperature: 0.2,
+      useSearch: false,
+      providers
     });
 
-    const aiMessage = response.text;
-
-    return NextResponse.json({ blueprint: aiMessage });
+    return NextResponse.json({ blueprint: aiResponse.text });
 
   } catch (error) {
     console.error("Blueprint API Error:", error);

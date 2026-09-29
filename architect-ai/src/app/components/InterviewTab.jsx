@@ -17,7 +17,6 @@ export default function InterviewTab({ projectId }) {
   useEffect(() => {
     if (messages.length === 0 && !isLoading && !initialized.current) {
       initialized.current = true;
-      // Wrap in setTimeout to avoid updating state during render phase warning
       setTimeout(() => {
         setMessages([
           {
@@ -44,6 +43,14 @@ export default function InterviewTab({ projectId }) {
 
     try {
       const token = await user.getIdToken();
+      let aiSettings = null;
+      try {
+        const saved = localStorage.getItem("architect_ai_settings");
+        if (saved) aiSettings = JSON.parse(saved);
+      } catch (e) {
+         console.error("Failed to parse local ai settings", e);
+      }
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: {
@@ -53,10 +60,14 @@ export default function InterviewTab({ projectId }) {
         body: JSON.stringify({
           projectId,
           messages: newMessages,
+          aiSettings
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to send message");
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.details || "Failed to send message");
+      }
 
       const data = await res.json();
       setMessages([...newMessages, { role: "model", content: data.text }]);
@@ -64,7 +75,7 @@ export default function InterviewTab({ projectId }) {
       console.error("Chat error", error);
       setMessages([
         ...newMessages,
-        { role: "system", content: "Error: Failed to communicate with Architect AI. Please try again." }
+        { role: "system", content: `Error: ${error.message}. Please check your Provider Settings.` }
       ]);
     } finally {
       setIsLoading(false);

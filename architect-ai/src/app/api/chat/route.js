@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
 import { isOwner } from "@/lib/firebase/server";
 import * as admin from "firebase-admin";
+import { executeAiRequest } from "@/lib/ai/routing";
 
 if (!admin.apps?.length) {
   try {
@@ -35,14 +35,11 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { messages, projectId } = body;
+    const { messages, projectId, aiSettings } = body;
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: "Invalid messages format" }, { status: 400 });
     }
-
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const model = "gemini-2.5-pro";
 
     const systemInstruction = `You are an Architect AI — Software Research & Planning Agent.
 Your purpose is to help a user turn a rough software idea into researched requirements, an explicitly confirmed scope, a detailed implementation blueprint, and a self-contained prompt for a coding agent.
@@ -60,23 +57,34 @@ CORE RULES:
 - If this is the start of a new project, your first question MUST BE exactly: "What would you like to build, and who will use it?"
 - Do NOT generate a final blueprint here. Your goal is just to gather requirements and build context.`;
 
-    const geminiMessages = messages.map(msg => ({
-      role: msg.role === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.content }]
-    }));
+    // Construct the provider cascade from settings
+    const providers = [];
+    if (aiSettings) {
+      const mapProvider = (type) => {
+        if (type === 'gemini') return { type: 'gemini' };
+        if (type === 'omniroute') return { type: 'omniroute', apiKey: aiSettings.omnirouteApiKey, model: aiSettings.omnirouteModel };
+        if (type === 'self-hosted') return { type: 'self-hosted', baseUrl: aiSettings.selfHostedUrl, apiKey: aiSettings.selfHostedApiKey, model: aiSettings.selfHostedModel };
+        return null;
+      };
 
-    const response = await ai.models.generateContent({
-      model: model,
-      contents: geminiMessages,
-      config: {
-        systemInstruction: systemInstruction,
-        temperature: 0.7,
+      const primary = mapProvider(aiSettings.primaryProvider);
+      if (primary) providers.push(primary);
+
+      if (aiSettings.fallbackProvider && aiSettings.fallbackProvider !== 'none') {
+         const fallback = mapProvider(aiSettings.fallbackProvider);
+         if (fallback) providers.push(fallback);
       }
+    }
+
+    const aiResponse = await executeAiRequest({
+      messages,
+      systemInstruction,
+      temperature: 0.7,
+      useSearch: false,
+      providers
     });
 
-    const aiMessage = response.text;
-
-    return NextResponse.json({ text: aiMessage });
+    return NextResponse.json({ text: aiResponse.text });
 
   } catch (error) {
     console.error("Chat API Error:", error);
