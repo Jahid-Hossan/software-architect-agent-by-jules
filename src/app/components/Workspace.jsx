@@ -2,18 +2,24 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "./AuthProvider";
-import { Menu, Plus, MessageSquare, Code, CheckSquare, FileText, Settings, ChevronRight, X, LayoutDashboard, Edit2, Trash2 } from "lucide-react";
+import { Menu, Plus, MessageSquare, Code, CheckSquare, FileText, Settings, ChevronRight, X, LayoutDashboard, Edit2, Trash2, Database as DbIcon, Target, FileCode } from "lucide-react";
 import clsx from "clsx";
+
+import IntakeForm from "./IntakeForm";
 import InterviewTab from "./InterviewTab";
+import MemoryTab from "./MemoryTab";
+import ReviewTab from "./ReviewTab";
 import BlueprintTab from "./BlueprintTab";
+import PromptTab from "./PromptTab";
 import SettingsView from "./SettingsView";
 
 const PIPELINE_STAGES = {
+  IDEA: 'IDEA',
   INTERVIEW: 'INTERVIEW',
-  TECHNOLOGY: 'TECHNOLOGY',
+  MEMORY: 'MEMORY',
   REVIEW: 'REVIEW',
   BLUEPRINT: 'BLUEPRINT',
-  CODING_PROMPT: 'CODING_PROMPT',
+  PROMPT: 'PROMPT',
 };
 
 const STAGE_ORDER = Object.values(PIPELINE_STAGES);
@@ -25,25 +31,23 @@ export default function Workspace() {
 
   const [appView, setAppView] = useState("project"); // "project" | "settings"
   const [activeProjectId, setActiveProjectId] = useState(null);
-  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
+  const [activeProjectState, setActiveProjectState] = useState(null);
 
-  // Use refs to avoid dependency loops if functions are redefined
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const initialFetchDone = useRef(false);
 
+  // Fetch list of projects
   useEffect(() => {
     const fetchProjects = async () => {
        if (!user) return;
        setIsLoadingProjects(true);
        try {
           const token = await user.getIdToken();
-          const res = await fetch("/api/projects", {
-             headers: { Authorization: `Bearer ${token}` }
-          });
+          const res = await fetch("/api/projects", { headers: { Authorization: `Bearer ${token}` } });
           if (res.ok) {
              const data = await res.json();
              setProjects(data.projects || []);
 
-             // Auto select first project if nothing selected yet
              if (data.projects?.length > 0 && !activeProjectId && !initialFetchDone.current) {
                 setActiveProjectId(data.projects[0].id);
                 initialFetchDone.current = true;
@@ -55,9 +59,31 @@ export default function Workspace() {
           setIsLoadingProjects(false);
        }
     };
-
     fetchProjects();
-  }, [user, activeProjectId]); // Added activeProjectId to deps
+  }, [user, activeProjectId]);
+
+  // Fetch full state of the active project
+  const loadActiveProjectDetails = async () => {
+      if (!activeProjectId || !user || activeProjectId === 'new') return;
+      try {
+         const token = await user.getIdToken();
+         const res = await fetch(`/api/projects/${activeProjectId}`, { headers: { Authorization: `Bearer ${token}` } });
+         if (res.ok) {
+            const data = await res.json();
+            setActiveProjectState(data.project);
+         }
+      } catch (e) {
+         console.error("Failed to load active project details", e);
+      }
+  };
+
+  useEffect(() => {
+     if (activeProjectId === 'new') {
+        setActiveProjectState({ id: 'new', status: PIPELINE_STAGES.IDEA });
+     } else {
+        loadActiveProjectDetails();
+     }
+  }, [activeProjectId, user]);
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
 
@@ -66,24 +92,15 @@ export default function Workspace() {
     setAppView("project");
   };
 
-  const handleNewChat = async () => {
-     try {
-        const token = await user.getIdToken();
-        const res = await fetch("/api/projects", {
-           method: "POST",
-           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-           body: JSON.stringify({ title: "New Project Conversation" })
-        });
-        if (res.ok) {
-           const data = await res.json();
-           const newProj = { id: data.projectId, title: "New Project Conversation", status: PIPELINE_STAGES.INTERVIEW, updatedAt: new Date().toISOString() };
-           setProjects([newProj, ...projects]);
-           setActiveProjectId(data.projectId);
-           setAppView("project");
-        }
-     } catch (e) {
-        console.error(e);
-     }
+  const handleNewChatClick = () => {
+     setActiveProjectId('new');
+     setAppView("project");
+  };
+
+  const onProjectCreated = (newId) => {
+     setActiveProjectId(newId);
+     advanceStage(newId, PIPELINE_STAGES.INTERVIEW);
+     setProjects([{ id: newId, title: "Loading...", status: PIPELINE_STAGES.INTERVIEW }, ...projects]);
   };
 
   const handleRename = async (e, projectId) => {
@@ -107,7 +124,10 @@ export default function Workspace() {
      if (!confirm("Delete this conversation?")) return;
 
      setProjects(projects.filter(p => p.id !== projectId));
-     if (activeProjectId === projectId) setActiveProjectId(null);
+     if (activeProjectId === projectId) {
+        setActiveProjectId(null);
+        setActiveProjectState(null);
+     }
 
      try {
         const token = await user.getIdToken();
@@ -118,11 +138,15 @@ export default function Workspace() {
      } catch(e) { console.error(e); }
   };
 
-  const advanceStage = async (nextStage) => {
-     setProjects(projects.map(p => p.id === activeProjectId ? { ...p, status: nextStage } : p));
+  const advanceStage = async (projectId, nextStage) => {
+     setProjects(projects.map(p => p.id === projectId ? { ...p, status: nextStage } : p));
+     if (activeProjectState) {
+        setActiveProjectState({ ...activeProjectState, status: nextStage });
+     }
+
      try {
         const token = await user.getIdToken();
-        await fetch(`/api/projects/${activeProjectId}`, {
+        await fetch(`/api/projects/${projectId}`, {
            method: "PATCH",
            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
            body: JSON.stringify({ status: nextStage })
@@ -131,8 +155,6 @@ export default function Workspace() {
         console.error("Failed to advance stage", e);
      }
   };
-
-  const activeProject = projects.find(p => p.id === activeProjectId);
 
   return (
     <div className="flex h-screen overflow-hidden bg-white">
@@ -156,23 +178,23 @@ export default function Workspace() {
 
         <div className="p-4">
           <button
-            onClick={handleNewChat}
-            className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+            onClick={handleNewChatClick}
+            className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
           >
             <Plus size={18} />
-            New Chat
+            New Project
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-2 space-y-4">
           <div>
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-2">
-              Chats / History
+              History
             </div>
             {isLoadingProjects ? (
                <div className="px-3 py-2 text-sm text-gray-400">Loading...</div>
             ) : projects.length === 0 ? (
-               <div className="px-3 py-2 text-sm text-gray-400">No chats yet.</div>
+               <div className="px-3 py-2 text-sm text-gray-400">No projects yet.</div>
             ) : (
                <ul className="space-y-1">
                  {projects.map((project) => (
@@ -188,13 +210,13 @@ export default function Workspace() {
                      >
                        <LayoutDashboard size={16} className="shrink-0" />
                        <div className="flex-1 min-w-0">
-                          <div className="truncate">{project.title}</div>
+                          <div className="truncate font-medium">{project.title}</div>
                           <div className="text-[10px] text-gray-400 mt-0.5 uppercase tracking-wide">{project.status}</div>
                        </div>
 
                        <div className="hidden group-hover:flex items-center gap-1 shrink-0">
-                          <button onClick={(e) => handleRename(e, project.id)} className="p-1 text-gray-400 hover:text-blue-600"><Edit2 size={12}/></button>
-                          <button onClick={(e) => handleDelete(e, project.id)} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={12}/></button>
+                          <button onClick={(e) => handleRename(e, project.id)} className="p-1.5 text-gray-400 hover:text-blue-600 rounded-md hover:bg-blue-50"><Edit2 size={12}/></button>
+                          <button onClick={(e) => handleDelete(e, project.id)} className="p-1.5 text-gray-400 hover:text-red-600 rounded-md hover:bg-red-50"><Trash2 size={12}/></button>
                        </div>
                      </div>
                    </li>
@@ -219,7 +241,7 @@ export default function Workspace() {
                     )}
                   >
                     <Settings size={16} />
-                    AI Providers
+                    AI Providers & Models
                   </button>
               </li>
             </ul>
@@ -237,7 +259,7 @@ export default function Workspace() {
             </div>
             <button
               onClick={logOut}
-              className="mt-3 w-full text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-md px-3 py-1.5 transition-colors"
+              className="mt-3 w-full text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-md px-3 py-1.5 transition-colors font-medium"
             >
               Sign out
             </button>
@@ -259,10 +281,10 @@ export default function Workspace() {
                 <span className="font-medium text-gray-900">Configuration</span>
               ) : (
                 <>
-                  <span>Chats</span>
+                  <span>History</span>
                   <ChevronRight size={16} className="mx-1" />
                   <span className="font-medium text-gray-900">
-                    {activeProject?.title || "Select a project"}
+                    {activeProjectState?.title || "New Project"}
                   </span>
                 </>
               )}
@@ -274,28 +296,41 @@ export default function Workspace() {
           <div className="flex-1 overflow-hidden p-4 md:p-6 max-w-5xl mx-auto w-full">
             <SettingsView />
           </div>
-        ) : activeProjectId ? (
+        ) : activeProjectId === 'new' ? (
+           <div className="flex-1 overflow-y-auto">
+             <IntakeForm onProjectCreated={onProjectCreated} />
+           </div>
+        ) : activeProjectState ? (
           <div className="flex-1 flex flex-col h-full overflow-hidden">
-            <div className="px-6 py-4 bg-white border-b border-gray-200 shadow-sm z-10">
-               <div className="flex items-center justify-between max-w-4xl mx-auto relative">
+            <div className="px-6 py-4 bg-white border-b border-gray-200 shadow-sm z-10 overflow-x-auto shrink-0">
+               <div className="flex items-center justify-between min-w-[600px] max-w-4xl mx-auto relative">
                   <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-gray-200 -z-10 -translate-y-1/2"></div>
 
                   {[
                     { id: PIPELINE_STAGES.INTERVIEW, label: "Interview", icon: MessageSquare },
-                    { id: PIPELINE_STAGES.TECHNOLOGY, label: "Tech Stack", icon: Code },
+                    { id: PIPELINE_STAGES.MEMORY, label: "Memory", icon: DbIcon },
                     { id: PIPELINE_STAGES.REVIEW, label: "Review", icon: CheckSquare },
                     { id: PIPELINE_STAGES.BLUEPRINT, label: "Blueprint", icon: FileText },
-                    { id: PIPELINE_STAGES.CODING_PROMPT, label: "Prompt", icon: FileText },
+                    { id: PIPELINE_STAGES.PROMPT, label: "Prompt", icon: FileCode },
                   ].map((stage, idx) => {
-                     const isCurrent = activeProject?.status === stage.id;
-                     const isPast = STAGE_ORDER.indexOf(activeProject?.status) > idx;
+                     // Offset by 1 because IDEA is stage 0 but not shown in this stepper
+                     const currentIdx = STAGE_ORDER.indexOf(activeProjectState.status);
+                     const stageIdx = STAGE_ORDER.indexOf(stage.id);
+                     const isCurrent = currentIdx === stageIdx;
+                     const isPast = currentIdx > stageIdx;
 
                      return (
                         <div key={stage.id} className="flex flex-col items-center bg-white px-2">
                            <div className={clsx(
-                              "w-10 h-10 rounded-full flex items-center justify-center text-white font-medium border-4 border-white shadow-sm transition-colors",
-                              isCurrent ? "bg-blue-600 ring-2 ring-blue-200" : isPast ? "bg-green-500" : "bg-gray-300"
-                           )}>
+                              "w-10 h-10 rounded-full flex items-center justify-center text-white font-medium border-4 border-white shadow-sm transition-colors cursor-pointer",
+                              isCurrent ? "bg-blue-600 ring-2 ring-blue-200" : isPast ? "bg-green-500 hover:bg-green-600" : "bg-gray-300 hover:bg-gray-400"
+                           )}
+                           onClick={() => {
+                              // Allow navigation to past phases
+                              if (isPast || (activeProjectState.requirementsConfirmed && stageIdx > currentIdx)) {
+                                 advanceStage(activeProjectState.id, stage.id);
+                              }
+                           }}>
                               {isPast ? "✓" : (idx + 1)}
                            </div>
                            <span className={clsx("text-xs mt-2 font-medium", isCurrent ? "text-blue-700" : isPast ? "text-gray-700" : "text-gray-400")}>
@@ -308,83 +343,103 @@ export default function Workspace() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col max-w-5xl mx-auto w-full">
-              {activeProject?.status === PIPELINE_STAGES.INTERVIEW && (
+
+              {activeProjectState.status === PIPELINE_STAGES.INTERVIEW && (
                  <>
-                   <div className="mb-4 flex justify-between items-center bg-blue-50 p-4 rounded-lg border border-blue-100">
-                      <p className="text-sm text-blue-800">Complete the interview with Architect AI. Once you have a clear scope, proceed to the next step.</p>
+                   <div className="mb-4 flex flex-col md:flex-row gap-4 justify-between items-center bg-blue-50 p-4 rounded-xl border border-blue-100 shadow-sm">
+                      <p className="text-sm text-blue-800">Discuss ideas, trade-offs, and technology choices. Once scoped, proceed to verify extracted architectural memory.</p>
                       <button
-                         onClick={() => advanceStage(PIPELINE_STAGES.TECHNOLOGY)}
-                         className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700 transition-colors"
+                         onClick={() => advanceStage(activeProjectState.id, PIPELINE_STAGES.MEMORY)}
+                         className="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shrink-0 shadow-sm w-full md:w-auto text-center"
                       >
-                         Proceed to Tech Stack →
+                         Proceed to Project Memory →
                       </button>
                    </div>
-                   <div className="flex-1 min-h-0"><InterviewTab projectId={activeProjectId} stage={PIPELINE_STAGES.INTERVIEW} /></div>
+                   <div className="flex-1 min-h-0"><InterviewTab project={activeProjectState} /></div>
                  </>
               )}
-              {activeProject?.status === PIPELINE_STAGES.TECHNOLOGY && (
+
+              {activeProjectState.status === PIPELINE_STAGES.MEMORY && (
                  <>
-                   <div className="mb-4 flex justify-between items-center bg-purple-50 p-4 rounded-lg border border-purple-100">
-                      <p className="text-sm text-purple-800">Discuss and finalize the optimal technologies for your requirements.</p>
+                   <div className="mb-4 flex flex-col md:flex-row gap-4 justify-between items-center bg-purple-50 p-4 rounded-xl border border-purple-100 shadow-sm">
+                      <p className="text-sm text-purple-800">Verify extracted assumptions, exclusions, and decisions.</p>
                       <button
-                         onClick={() => advanceStage(PIPELINE_STAGES.REVIEW)}
-                         className="bg-purple-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-purple-700 transition-colors"
+                         onClick={() => advanceStage(activeProjectState.id, PIPELINE_STAGES.REVIEW)}
+                         className="bg-purple-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors shrink-0 shadow-sm w-full md:w-auto text-center"
                       >
-                         Approve Tech & Review →
+                         Proceed to Requirements Review →
                       </button>
                    </div>
-                   <div className="flex-1 min-h-0"><InterviewTab projectId={activeProjectId} stage={PIPELINE_STAGES.TECHNOLOGY} /></div>
+                   <div className="flex-1 min-h-0">
+                      <MemoryTab
+                         project={activeProjectState}
+                         onMemoryUpdated={() => loadActiveProjectDetails()}
+                      />
+                   </div>
                  </>
               )}
-              {activeProject?.status === PIPELINE_STAGES.REVIEW && (
+
+              {activeProjectState.status === PIPELINE_STAGES.REVIEW && (
                  <>
-                   <div className="mb-4 flex justify-between items-center bg-amber-50 p-4 rounded-lg border border-amber-100">
-                      <p className="text-sm text-amber-800">Final review of requirements and technical selections before generating heavy blueprints.</p>
+                   <div className="mb-4 flex flex-col md:flex-row gap-4 justify-between items-center bg-amber-50 p-4 rounded-xl border border-amber-100 shadow-sm">
+                      <p className="text-sm text-amber-800">Review structured requirements. Explicit Confirmation is required to unlock downstream blueprints.</p>
                       <button
-                         onClick={() => advanceStage(PIPELINE_STAGES.BLUEPRINT)}
-                         className="bg-amber-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-amber-700 transition-colors"
+                         onClick={() => advanceStage(activeProjectState.id, PIPELINE_STAGES.BLUEPRINT)}
+                         disabled={!activeProjectState.requirementsConfirmed}
+                         className="bg-amber-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors shrink-0 shadow-sm w-full md:w-auto text-center disabled:opacity-50"
                       >
                          Generate Blueprint →
                       </button>
                    </div>
-                   <div className="flex-1 min-h-0"><InterviewTab projectId={activeProjectId} stage={PIPELINE_STAGES.REVIEW} /></div>
+                   <div className="flex-1 min-h-0">
+                      <ReviewTab
+                         project={activeProjectState}
+                         onRequirementsUpdated={() => loadActiveProjectDetails()}
+                      />
+                   </div>
                  </>
               )}
-              {activeProject?.status === PIPELINE_STAGES.BLUEPRINT && (
+
+              {activeProjectState.status === PIPELINE_STAGES.BLUEPRINT && (
                  <>
-                   <div className="mb-4 flex justify-between items-center bg-indigo-50 p-4 rounded-lg border border-indigo-100">
-                      <p className="text-sm text-indigo-800">Review the generated system architecture and implementation blueprint.</p>
+                   <div className="mb-4 flex flex-col md:flex-row gap-4 justify-between items-center bg-indigo-50 p-4 rounded-xl border border-indigo-100 shadow-sm">
+                      <p className="text-sm text-indigo-800">Review system architecture, API contracts, database schemas, and implementation task phases.</p>
                       <button
-                         onClick={() => advanceStage(PIPELINE_STAGES.CODING_PROMPT)}
-                         className="bg-indigo-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-indigo-700 transition-colors"
+                         onClick={() => advanceStage(activeProjectState.id, PIPELINE_STAGES.PROMPT)}
+                         disabled={!activeProjectState.blueprint}
+                         className="bg-indigo-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors shrink-0 shadow-sm w-full md:w-auto text-center disabled:opacity-50"
                       >
-                         Create Coding Prompt →
+                         Generate Coding Prompt →
                       </button>
                    </div>
-                   <div className="flex-1 min-h-0"><BlueprintTab projectId={activeProjectId} requirementsConfirmed={true} /></div>
-                 </>
-              )}
-              {activeProject?.status === PIPELINE_STAGES.CODING_PROMPT && (
-                 <>
-                   <div className="mb-4 flex justify-between items-center bg-green-50 p-4 rounded-lg border border-green-100">
-                      <p className="text-sm text-green-800">Your final prompt is ready to be sent to a coding agent (Cursor, Claude Code, etc.).</p>
-                      <button
-                         onClick={() => {
-                             alert("Full prompt copied to clipboard!");
-                         }}
-                         className="bg-green-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-green-700 transition-colors"
-                      >
-                         Copy Full Prompt
-                      </button>
+                   <div className="flex-1 min-h-0">
+                      <BlueprintTab
+                         project={activeProjectState}
+                         onBlueprintUpdated={() => loadActiveProjectDetails()}
+                      />
                    </div>
-                   <div className="flex-1 min-h-0"><InterviewTab projectId={activeProjectId} stage={PIPELINE_STAGES.CODING_PROMPT} /></div>
                  </>
               )}
+
+              {activeProjectState.status === PIPELINE_STAGES.PROMPT && (
+                 <>
+                   <div className="mb-4 flex flex-col md:flex-row gap-4 justify-between items-center bg-green-50 p-4 rounded-xl border border-green-100 shadow-sm">
+                      <p className="text-sm text-green-800">Your final, execution-ready prompt to feed directly into your preferred coding agent.</p>
+                   </div>
+                   <div className="flex-1 min-h-0">
+                      <PromptTab
+                         project={activeProjectState}
+                         onPromptUpdated={() => loadActiveProjectDetails()}
+                      />
+                   </div>
+                 </>
+              )}
+
             </div>
           </div>
         ) : (
           <div className="flex-1 flex items-center justify-center p-6 text-gray-500">
-            Select a conversation from the sidebar or create a new chat to get started.
+             Loading project workspace...
           </div>
         )}
       </main>

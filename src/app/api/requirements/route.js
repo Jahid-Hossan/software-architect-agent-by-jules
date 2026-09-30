@@ -9,62 +9,26 @@ if (!getApps().length) {
   try { initializeApp({ projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID }); } catch (e) {}
 }
 
-const BLUEPRINT_SYSTEM_PROMPT = `You are a Master Software Architect.
-Your task is to generate a comprehensive, highly detailed software blueprint based on the strictly confirmed Requirements Specification.
+const REQUIREMENTS_SYSTEM_PROMPT = `You are an Expert Requirements Analyst.
+Your task is to synthesize the provided Project Memory and Initial Idea into a finalized, structured Requirements Specification.
 
-You MUST output ONLY valid JSON matching this exact schema:
+Return ONLY valid JSON matching this exact schema:
 {
-  "architectureAndSystem": {
-    "overview": "String",
-    "systemBoundaries": ["Boundary 1", "Boundary 2"],
-    "moduleResponsibilities": ["Module 1: Does X", "Module 2: Does Y"],
-    "directoryStructure": "String representation of folder structure"
-  },
-  "techStackAndRationale": [
-    {
-      "category": "String (e.g. Frontend, Database)",
-      "technology": "String",
-      "reason": "String",
-      "alternativesConsidered": "String"
-    }
-  ],
-  "dataEntitiesAndSchemas": [
-    {
-      "entity": "String (e.g. User)",
-      "fields": ["id: UUID", "email: String"],
-      "relationships": ["Has many Posts"]
-    }
-  ],
-  "apisAndIntegrations": [
-    {
-      "method": "GET/POST/PUT/DELETE",
-      "path": "String",
-      "purpose": "String",
-      "contract": "String"
-    }
-  ],
-  "implementationTasks": [
-    {
-      "id": "String (e.g. TSK-001)",
-      "title": "String",
-      "phase": "String (e.g. Phase 1: Setup)",
-      "dependencies": ["TSK-001", "None"],
-      "description": "String",
-      "acceptanceCriteria": ["Crit 1", "Crit 2"],
-      "filesAffected": ["src/app/page.tsx"]
-    }
-  ],
-  "definitionOfDone": {
-    "testing": "String",
-    "security": "String",
-    "errorHandling": "String",
-    "accessibility": "String",
-    "productionReadiness": "String",
-    "limitations": "String"
-  }
+  "purpose": "Brief description of why the software exists",
+  "targetUsers": ["User 1", "User 2"],
+  "primaryUserJourney": "High level flow of how users interact",
+  "includedFeatures": ["Feature 1", "Feature 2"],
+  "explicitExclusions": ["Exclusion 1", "Exclusion 2"],
+  "dataAndAccessRequirements": "Notes on data models, privacy, and auth",
+  "integrationsAndApis": ["API 1", "API 2"],
+  "budgetAndHostingConstraints": "Constraints found in memory",
+  "technicalAssumptions": ["Assumption 1", "Assumption 2"],
+  "researchLimitations": "Any gaps in knowledge",
+  "successCriteria": ["Metric 1", "Metric 2"]
 }
 
-Do NOT wrap the JSON in Markdown ticks (\`\`\`json). Return the raw JSON object.`;
+If you do not have enough context for a field, use "Not specified" or leave the array empty.
+Do NOT wrap the JSON in Markdown ticks (\`\`\`json).`;
 
 export async function POST(request) {
   try {
@@ -78,11 +42,11 @@ export async function POST(request) {
     const { projectId, aiSettings } = await request.json();
     const project = await getProject(projectId, userId);
 
-    if (!project?.requirementsConfirmed) {
-       return NextResponse.json({ error: "Requirements must be explicitly confirmed before generating a blueprint." }, { status: 400 });
+    if (!project?.memory) {
+       return NextResponse.json({ error: "Project Memory is empty. Please synthesize memory first." }, { status: 400 });
     }
 
-    const payload = `Confirmed Requirements (Version ${project.requirementsVersion}):\n${JSON.stringify(project.requirements, null, 2)}`;
+    const payload = `Initial Idea: ${project.initialIdea}\n\nProject Memory:\n${JSON.stringify(project.memory, null, 2)}`;
 
     const providers = [];
     if (aiSettings?.routing && Array.isArray(aiSettings?.providers)) {
@@ -101,7 +65,7 @@ export async function POST(request) {
 
     const aiResponse = await executeAiRequest({
       messages: [{ role: 'user', content: payload }],
-      systemInstruction: BLUEPRINT_SYSTEM_PROMPT,
+      systemInstruction: REQUIREMENTS_SYSTEM_PROMPT,
       temperature: 0.1,
       useSearch: false,
       providers
@@ -111,22 +75,27 @@ export async function POST(request) {
     if (cleanJsonStr.startsWith("```json")) cleanJsonStr = cleanJsonStr.replace(/^```json/, '').replace(/```$/, '').trim();
     else if (cleanJsonStr.startsWith("```")) cleanJsonStr = cleanJsonStr.replace(/^```/, '').replace(/```$/, '').trim();
 
-    let blueprint;
+    let requirements;
     try {
-        blueprint = JSON.parse(cleanJsonStr);
+        requirements = JSON.parse(cleanJsonStr);
     } catch(e) {
-        console.error("Failed to parse Blueprint JSON", aiResponse.text);
-        throw new Error("AI failed to return valid JSON blueprint structure.");
+        console.error("Failed to parse Requirements JSON", aiResponse.text);
+        throw new Error("AI failed to return valid JSON requirements.");
     }
 
+    // Bump version and revoke any prior confirmation when regenerating
+    const nextVersion = (project.requirementsVersion || 0) + 1;
+
     await updateProject(projectId, userId, {
-       blueprint,
-       blueprintRequirementsVersion: project.requirementsVersion
+       requirements,
+       requirementsVersion: nextVersion,
+       requirementsConfirmed: false,
+       requirementsConfirmedAt: null
     });
 
-    return NextResponse.json({ blueprint });
+    return NextResponse.json({ requirements, requirementsVersion: nextVersion });
   } catch (error) {
-    console.error("Blueprint API Error:", error);
+    console.error("Requirements API Error:", error);
     return NextResponse.json({ error: "Internal Server Error", details: error.message }, { status: 500 });
   }
 }

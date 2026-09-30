@@ -3,7 +3,7 @@ import { isOwner } from "@/lib/firebase/server";
 import { getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { executeAiRequest } from "@/lib/ai/routing";
-import { addMessage } from "@/lib/firebase/db";
+import { addMessage, getProject } from "@/lib/firebase/db";
 
 if (!getApps().length) {
   try {
@@ -13,32 +13,30 @@ if (!getApps().length) {
   }
 }
 
-const STAGE_PROMPTS = {
-  INTERVIEW: `You are an Architect AI — Software Research & Planning Agent in the INTERVIEW stage.
-Your goal: Gather project requirements, scope, target audience, and constraints.
+const INTERVIEW_SYSTEM_PROMPT = `You are a strict, focused Software Architect conducting a dynamic interview to define project requirements.
+
+Your goal is to understand the user's idea and guide them through critical architectural decisions (e.g., frontend frameworks, database types, auth providers, hosting, specific features).
+
 RULES:
-- Respond in the user's language.
-- Ask exactly ONE important question at a time.
-- Adapt follow-up questions to previous answers.
-- Explain technical concepts simply.
-- If this is the start of a new project, your first question MUST BE exactly: "What would you like to build, and who will use it?"
-- Do NOT generate a final blueprint or recommend specific tech stacks yet. Just gather business requirements.`,
+1. Ask exactly ONE focused question at a time. Do not overwhelm the user.
+2. Adapt to previous answers.
+3. You must output your response in valid JSON format matching the schema below.
+4. Provide 2-3 logical options for the user to choose from when appropriate, along with a trade-off or recommendation note.
 
-  TECHNOLOGY: `You are an Architect AI in the TECHNOLOGY STACK stage.
-Your goal: Review the gathered requirements and recommend the optimal technology stack (Frontend, Backend, Database, Hosting).
-RULES:
-- Propose 1-2 distinct stack options with clear trade-offs based on the user's requirements.
-- Focus on pragmatism, scalability, and modern standards.
-- Ask the user which stack they prefer or if they want to make any custom adjustments.`,
+JSON OUTPUT SCHEMA:
+{
+  "message": "The main conversational text or question.",
+  "options": [
+    {
+      "label": "Option Title (e.g., React)",
+      "description": "Brief description of the option.",
+      "tradeOff": "Why choose this? (e.g., Fast ecosystem, but steep learning curve)",
+      "isRecommended": boolean
+    }
+  ]
+}
 
-  REVIEW: `You are an Architect AI in the REVIEW stage.
-Your goal: Summarize the final scope and the selected technology stack for final approval.`,
-
-  BLUEPRINT: `You are an Architect AI in the BLUEPRINT generation stage.
-Your goal: Draft a highly detailed software architecture blueprint.`,
-
-  CODING_PROMPT: `You are an Architect AI. Your goal: Generate a final Coding Agent Prompt.`
-};
+If no options are needed for the current message, you can leave the "options" array empty. Do NOT include markdown blocks (\`\`\`json) in your response, just the raw JSON string.`;
 
 export async function POST(request) {
   try {
@@ -48,8 +46,7 @@ export async function POST(request) {
     }
 
     const token = authHeader.split("Bearer ")[1];
-    let email;
-    let userId;
+    let email, userId;
     try {
       const decodedToken = await getAuth().verifyIdToken(token);
       email = decodedToken.email;
@@ -64,17 +61,15 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { messages, projectId, aiSettings, stage } = body;
+    const { messages, projectId, aiSettings } = body;
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: "Invalid messages format" }, { status: 400 });
     }
 
-    const activeStage = stage || 'INTERVIEW';
-
     // Persist User Message
     const latestMessage = messages[messages.length - 1];
-    if (latestMessage && latestMessage.role === 'user' && projectId && projectId.startsWith("new-") === false) {
+    if (latestMessage && latestMessage.role === 'user' && projectId && projectId !== 'new') {
        try {
            await addMessage(projectId, userId, 'user', latestMessage.content);
        } catch (dbErr) {
@@ -82,7 +77,16 @@ export async function POST(request) {
        }
     }
 
-    const systemInstruction = STAGE_PROMPTS[activeStage] || STAGE_PROMPTS.INTERVIEW;
+    // Inject initial project idea if this is the first real question
+    let systemInstruction = INTERVIEW_SYSTEM_PROMPT;
+    if (projectId && projectId !== 'new') {
+       try {
+          const projectState = await getProject(projectId, userId);
+          if (projectState?.initialIdea) {
+             systemInstruction += `\n\nPROJECT CONTEXT: The user initially stated: "${projectState.initialIdea}"`;
+          }
+       } catch(e) {}
+    }
 
     const providers = [];
     if (aiSettings?.routing && Array.isArray(aiSettings?.providers)) {
@@ -93,7 +97,6 @@ export async function POST(request) {
         if (!provDef) return null;
         return { type: provDef.type, model: routeConfig.modelSlug, apiKey: provDef.apiKey, baseUrl: provDef.baseUrl };
       };
-
       const primary = mapRouteToProvider(routing.primary);
       if (primary) providers.push(primary);
       const fallback = mapRouteToProvider(routing.fallback);
@@ -103,21 +106,38 @@ export async function POST(request) {
     const aiResponse = await executeAiRequest({
       messages,
       systemInstruction,
-      temperature: 0.7,
+      temperature: 0.2, // Low temp for more stable JSON parsing
       useSearch: false,
       providers
     });
 
+    // Clean up potentially bad markdown wrapping from the model
+    let cleanJsonStr = aiResponse.text.trim();
+    if (cleanJsonStr.startsWith("```json")) {
+        cleanJsonStr = cleanJsonStr.replace(/^```json/, '').replace(/```$/, '').trim();
+    } else if (cleanJsonStr.startsWith("```")) {
+        cleanJsonStr = cleanJsonStr.replace(/^```/, '').replace(/```$/, '').trim();
+    }
+
+    let parsedResponse;
+    try {
+        parsedResponse = JSON.parse(cleanJsonStr);
+    } catch(e) {
+        console.error("Failed to parse AI JSON response. Raw output:", aiResponse.text);
+        // Fallback gracefully if AI failed to format JSON
+        parsedResponse = { message: aiResponse.text, options: [] };
+    }
+
     // Persist Assistant Message
-    if (aiResponse && aiResponse.text && projectId && projectId.startsWith("new-") === false) {
+    if (projectId && projectId !== 'new') {
        try {
-           await addMessage(projectId, userId, 'model', aiResponse.text);
+           await addMessage(projectId, userId, 'model', parsedResponse.message, { options: parsedResponse.options });
        } catch (dbErr) {
            console.error("[Chat API] Warning: Could not persist assistant message.", dbErr);
        }
     }
 
-    return NextResponse.json({ text: aiResponse.text });
+    return NextResponse.json(parsedResponse);
 
   } catch (error) {
     console.error("Chat API Error:", error);

@@ -13,24 +13,46 @@ if (!getApps().length) {
 export const dbAdmin = getFirestore();
 
 export const PIPELINE_STAGES = {
+  IDEA: 'IDEA',
   INTERVIEW: 'INTERVIEW',
-  TECHNOLOGY: 'TECHNOLOGY',
+  MEMORY: 'MEMORY',
   REVIEW: 'REVIEW',
   BLUEPRINT: 'BLUEPRINT',
-  CODING_PROMPT: 'CODING_PROMPT',
+  PROMPT: 'PROMPT',
 };
 
-export async function createProject(userId, title = "New Project") {
+export async function createProject(userId, title = "New Project", initialIdea = "") {
   const projectRef = dbAdmin.collection("projects").doc();
   const now = FieldValue.serverTimestamp();
 
   await projectRef.set({
     title,
     ownerId: userId,
-    status: PIPELINE_STAGES.INTERVIEW,
+    status: PIPELINE_STAGES.IDEA,
+    initialIdea,
     createdAt: now,
     updatedAt: now,
-    metadata: {}
+
+    // Project State
+    memory: {
+       userDecisions: [],
+       recommendations: [],
+       assumptions: [],
+       exclusions: [],
+       researchFindings: [],
+       unresolvedQuestions: [],
+       scopeConflicts: []
+    },
+    requirements: null,
+    requirementsVersion: 0,
+    requirementsConfirmed: false,
+    requirementsConfirmedAt: null,
+
+    blueprint: null,
+    blueprintRequirementsVersion: null,
+
+    codingPrompt: null,
+    codingPromptRequirementsVersion: null
   });
 
   return projectRef.id;
@@ -48,7 +70,8 @@ export async function getProjects(userId) {
         id: doc.id,
         ...data,
         createdAt: data.createdAt?.toDate().toISOString() || new Date().toISOString(),
-        updatedAt: data.updatedAt?.toDate().toISOString() || new Date().toISOString()
+        updatedAt: data.updatedAt?.toDate().toISOString() || new Date().toISOString(),
+        requirementsConfirmedAt: data.requirementsConfirmedAt?.toDate().toISOString() || null
      };
   });
 }
@@ -64,7 +87,8 @@ export async function getProject(projectId, userId) {
      id: doc.id,
      ...data,
      createdAt: data.createdAt?.toDate().toISOString() || new Date().toISOString(),
-     updatedAt: data.updatedAt?.toDate().toISOString() || new Date().toISOString()
+     updatedAt: data.updatedAt?.toDate().toISOString() || new Date().toISOString(),
+     requirementsConfirmedAt: data.requirementsConfirmedAt?.toDate().toISOString() || null
   };
 }
 
@@ -79,23 +103,24 @@ export async function updateProject(projectId, userId, updates) {
 export async function deleteProject(projectId, userId) {
   await getProject(projectId, userId); // check auth
 
-  // Note: in a real production app you'd batch delete the subcollection (messages) first
-  // but for this MVP, deleting the doc hides it.
   await dbAdmin.collection("projects").doc(projectId).delete();
   return { success: true };
 }
 
-export async function addMessage(projectId, userId, role, content) {
+export async function addMessage(projectId, userId, role, content, metadata = null) {
   try {
     await getProject(projectId, userId);
 
     console.log(`[Chat DB] Saving ${role} message for project: ${projectId}`);
     const messageRef = dbAdmin.collection("projects").doc(projectId).collection("messages").doc();
-    await messageRef.set({
+    const data = {
       role,
       content,
       timestamp: FieldValue.serverTimestamp()
-    });
+    };
+    if (metadata) data.metadata = metadata;
+
+    await messageRef.set(data);
 
     await dbAdmin.collection("projects").doc(projectId).update({
       updatedAt: FieldValue.serverTimestamp()
@@ -125,6 +150,7 @@ export async function getMessages(projectId, userId) {
         id: doc.id,
         role: data.role,
         content: data.content,
+        metadata: data.metadata || null,
         timestamp: data.timestamp ? data.timestamp.toDate().toISOString() : new Date().toISOString()
       };
     });
