@@ -13,7 +13,7 @@ async function callGemini(messages, systemInstruction, temperature, useSearch, c
   }
 
   const ai = new GoogleGenAI({ apiKey });
-  const model = config?.model || "gemini-3.1-pro-preview"; // Updated from 2.5-pro
+  const model = config?.model || "gemini-3.1-pro-preview";
 
   const reqConfig = {
     systemInstruction,
@@ -43,11 +43,14 @@ async function callGemini(messages, systemInstruction, temperature, useSearch, c
 }
 
 async function callOpenAICompatible(messages, systemInstruction, temperature, config) {
-  const { baseUrl, apiKey, model } = config;
+  let { baseUrl, apiKey, model } = config;
 
   if (!baseUrl) {
-    throw new Error(`Missing Base URL configuration for OpenAI compatible endpoint.`);
+    baseUrl = 'https://omni.appshub.app/v1'; // fallback to Omni gateway
   }
+
+  // Ensure trailing slash is removed for clean URL construction
+  baseUrl = baseUrl.replace(/\/$/, '');
 
   // Convert generic messages to OpenAI format
   const oaiMessages = [];
@@ -62,18 +65,25 @@ async function callOpenAICompatible(messages, systemInstruction, temperature, co
      });
   });
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+  const fetchOptions = {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(apiKey && { "Authorization": `Bearer ${apiKey}` })
+      "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || "https://appshub.app",
+      "X-Title": "Architect AI",
     },
     body: JSON.stringify({
-      model: model || "default", // OpenRouter requires model, local servers might not
+      model: model || "default",
       messages: oaiMessages,
       temperature
     })
-  });
+  };
+
+  if (apiKey) {
+    fetchOptions.headers["Authorization"] = `Bearer ${apiKey.trim()}`;
+  }
+
+  const response = await fetch(`${baseUrl}/chat/completions`, fetchOptions);
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -112,9 +122,14 @@ export async function executeAiRequest({
       }
 
       if (provider.type === "openrouter") {
+        const apiKey = provider.apiKey || process.env.OMNI_API_KEY || process.env.OPENROUTER_API_KEY;
+        if (!apiKey) {
+          throw new Error('Omni/OpenRouter API key is missing. Please configure it in Provider Settings.');
+        }
+
         return await callOpenAICompatible(messages, systemInstruction, temperature, {
-          baseUrl: "https://openrouter.ai/api/v1", // Fixed base URL for OpenRouter
-          apiKey: provider.apiKey,
+          baseUrl: provider.baseUrl || 'https://omni.appshub.app/v1',
+          apiKey: apiKey,
           model: provider.model
         });
       }

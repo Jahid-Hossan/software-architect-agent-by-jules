@@ -15,7 +15,7 @@ const DEFAULT_SETTINGS = {
     },
   },
   providers: {
-    openrouter: { apiKey: "" },
+    openrouter: { baseUrl: "https://omni.appshub.app/v1", apiKey: "" },
     gemini: { apiKey: "" },
     selfHosted: { baseUrl: "http://localhost:11434/v1", apiKey: "" },
   },
@@ -39,7 +39,6 @@ export default function SettingsView() {
         try {
           const parsed = JSON.parse(saved);
 
-          // Helper to migrate old gemini-2.5-pro models dynamically so old local storages get updated
           const migrateModel = (model) => {
              if (model === "gemini-2.5-pro" || model === "gemini-1.5-pro") return "gemini-3.1-pro-preview";
              if (model === "gemini-2.5-flash" || model === "gemini-1.5-flash") return "gemini-3.8-flash";
@@ -58,7 +57,11 @@ export default function SettingsView() {
                }
             },
             providers: {
-              openrouter: { ...DEFAULT_SETTINGS.providers.openrouter, ...(parsed.providers?.openrouter || {}) },
+              openrouter: {
+                ...DEFAULT_SETTINGS.providers.openrouter,
+                ...(parsed.providers?.openrouter || {}),
+                baseUrl: parsed.providers?.openrouter?.baseUrl || "https://omni.appshub.app/v1"
+              },
               gemini: { ...DEFAULT_SETTINGS.providers.gemini, ...(parsed.providers?.gemini || {}) },
               selfHosted: { ...DEFAULT_SETTINGS.providers.selfHosted, ...(parsed.providers?.selfHosted || {}) },
             }
@@ -76,7 +79,6 @@ export default function SettingsView() {
       const newSettings = { ...prev };
       newSettings.routing[route][field] = value;
 
-      // Auto-set default model when provider changes if model is blank or switching away from 'none'
       if (field === 'provider' && value !== 'none') {
          newSettings.routing[route].model = PREDEFINED_MODELS[value]?.[0] || "";
       }
@@ -145,7 +147,7 @@ export default function SettingsView() {
                   className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
                 >
                   <option value="gemini">Google Gemini (Default)</option>
-                  <option value="openrouter">OpenRouter / Omniroute</option>
+                  <option value="openrouter">Omni / OpenRouter</option>
                   <option value="selfHosted">Self-Hosted / Local (Ollama)</option>
                 </select>
               </div>
@@ -183,7 +185,7 @@ export default function SettingsView() {
                 >
                   <option value="none">None (Fail immediately)</option>
                   <option value="gemini">Google Gemini</option>
-                  <option value="openrouter">OpenRouter / Omniroute</option>
+                  <option value="openrouter">Omni / OpenRouter</option>
                   <option value="selfHosted">Self-Hosted / Local (Ollama)</option>
                 </select>
               </div>
@@ -236,18 +238,31 @@ export default function SettingsView() {
               </div>
             </div>
 
-            {/* OpenRouter */}
+            {/* Omni / OpenRouter */}
             <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
-              <h4 className="font-semibold text-gray-800 mb-3">OpenRouter / Omniroute</h4>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">API Key</label>
-                <input
-                  type="password"
-                  value={settings.providers.openrouter.apiKey}
-                  onChange={(e) => handleProviderConfigChange("openrouter", "apiKey", e.target.value)}
-                  placeholder="sk-or-v1-..."
-                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+              <h4 className="font-semibold text-gray-800 mb-3">Omni / OpenRouter</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Base URL</label>
+                  <input
+                    type="text"
+                    value={settings.providers.openrouter.baseUrl}
+                    onChange={(e) => handleProviderConfigChange("openrouter", "baseUrl", e.target.value)}
+                    placeholder="https://omni.appshub.app/v1"
+                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Default: https://omni.appshub.app/v1</p>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">API Key</label>
+                  <input
+                    type="password"
+                    value={settings.providers.openrouter.apiKey}
+                    onChange={(e) => handleProviderConfigChange("openrouter", "apiKey", e.target.value)}
+                    placeholder="sk-or-v1-... or your Omni key"
+                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
             </div>
 
