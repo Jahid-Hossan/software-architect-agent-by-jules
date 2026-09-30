@@ -42,3 +42,29 @@ You can deploy this application for free using Vercel.
 4. Deploy!
 
 *Note: As long as you stay within the 15 requests/minute Gemini limit and standard Firebase limits, running this personal tool is 100% free.*
+
+## Docker Deployment
+
+You can host Architect AI yourself using Docker.
+
+1. **Build the Docker Image:**
+   Make sure to pass your public Firebase configuration during the build, as Next.js needs them to compile the client bundles.
+   ```bash
+   docker build \
+     --build-arg NEXT_PUBLIC_FIREBASE_API_KEY="your_api_key" \
+     --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="your_project.firebaseapp.com" \
+     --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID="your_project_id" \
+     --build-arg NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET="your_project.appspot.com" \
+     --build-arg NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="sender_id" \
+     --build-arg NEXT_PUBLIC_FIREBASE_APP_ID="app_id" \
+     -t architect-ai .
+   ```
+
+2. **Run the Container:**
+   Pass the private server-side secrets when running the container.
+   ```bash
+   docker run -p 3000:3000 \
+     -e GEMINI_API_KEY="your_gemini_key" \
+     -e ALLOWED_EMAILS="your_email@gmail.com" \
+     architect-ai
+   ```
