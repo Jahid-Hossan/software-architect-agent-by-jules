@@ -13,7 +13,7 @@ async function callGemini(messages, systemInstruction, temperature, useSearch, c
   }
 
   const ai = new GoogleGenAI({ apiKey });
-  const model = config?.model || "gemini-2.5-pro";
+  const model = config?.model || "gemini-3.1-pro-preview"; // Updated from 2.5-pro
 
   const reqConfig = {
     systemInstruction,
@@ -96,7 +96,7 @@ export async function executeAiRequest({
 }) {
   if (!providers || providers.length === 0) {
     // Default to standard Gemini if no routing config is provided
-    return callGemini(messages, systemInstruction, temperature, useSearch, { model: "gemini-2.5-pro" });
+    return callGemini(messages, systemInstruction, temperature, useSearch, { model: "gemini-3.1-pro-preview" });
   }
 
   let lastError = null;

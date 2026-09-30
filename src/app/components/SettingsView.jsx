@@ -7,7 +7,7 @@ const DEFAULT_SETTINGS = {
   routing: {
     primary: {
       provider: "gemini",
-      model: "gemini-2.5-pro",
+      model: "gemini-3.1-pro-preview",
     },
     fallback: {
       provider: "none",
@@ -22,7 +22,7 @@ const DEFAULT_SETTINGS = {
 };
 
 const PREDEFINED_MODELS = {
-  gemini: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
+  gemini: ["gemini-3.1-pro-preview", "gemini-3.8-flash", "gemini-3.5-flash-lite"],
   openrouter: ["anthropic/claude-3-haiku", "anthropic/claude-3-5-sonnet", "openai/gpt-4o", "openai/gpt-4o-mini", "meta-llama/llama-3-70b-instruct"],
   selfHosted: ["llama3", "mistral", "phi3", "gemma"],
   none: [],
@@ -38,9 +38,25 @@ export default function SettingsView() {
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          // Merge deeply to handle structural changes smoothly
+
+          // Helper to migrate old gemini-2.5-pro models dynamically so old local storages get updated
+          const migrateModel = (model) => {
+             if (model === "gemini-2.5-pro" || model === "gemini-1.5-pro") return "gemini-3.1-pro-preview";
+             if (model === "gemini-2.5-flash" || model === "gemini-1.5-flash") return "gemini-3.8-flash";
+             return model;
+          };
+
           setSettings({
-            routing: { ...DEFAULT_SETTINGS.routing, ...(parsed.routing || {}) },
+            routing: {
+               primary: {
+                  provider: parsed.routing?.primary?.provider || DEFAULT_SETTINGS.routing.primary.provider,
+                  model: migrateModel(parsed.routing?.primary?.model || DEFAULT_SETTINGS.routing.primary.model)
+               },
+               fallback: {
+                  provider: parsed.routing?.fallback?.provider || DEFAULT_SETTINGS.routing.fallback.provider,
+                  model: migrateModel(parsed.routing?.fallback?.model || DEFAULT_SETTINGS.routing.fallback.model)
+               }
+            },
             providers: {
               openrouter: { ...DEFAULT_SETTINGS.providers.openrouter, ...(parsed.providers?.openrouter || {}) },
               gemini: { ...DEFAULT_SETTINGS.providers.gemini, ...(parsed.providers?.gemini || {}) },
