@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { isOwner } from "@/lib/firebase/server";
-import * as admin from "firebase-admin";
+import { getApps, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 import { executeAiRequest } from "@/lib/ai/routing";
 
-if (!admin.apps?.length) {
+if (!getApps().length) {
   try {
-    admin.initializeApp({
+    initializeApp({
       projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
     });
   } catch (error) {
@@ -23,7 +24,7 @@ export async function POST(request) {
     const token = authHeader.split("Bearer ")[1];
     let email;
     try {
-      const decodedToken = await admin.auth().verifyIdToken(token);
+      const decodedToken = await getAuth().verifyIdToken(token);
       email = decodedToken.email;
     } catch (e) {
       return NextResponse.json({ error: "Invalid token" }, { status: 401 });
@@ -57,7 +58,6 @@ CORE RULES:
 - If this is the start of a new project, your first question MUST BE exactly: "What would you like to build, and who will use it?"
 - Do NOT generate a final blueprint here. Your goal is just to gather requirements and build context.`;
 
-    // Construct the provider cascade from settings
     const providers = [];
     if (aiSettings) {
       const mapProvider = (type) => {

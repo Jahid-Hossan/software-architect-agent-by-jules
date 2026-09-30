@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { isOwner } from "@/lib/firebase/server";
-import * as admin from "firebase-admin";
+import { getApps, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 
-// Initialize Firebase Admin if not already initialized
-if (!admin.apps?.length) {
+if (!getApps().length) {
   try {
-    admin.initializeApp({
+    initializeApp({
       projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
     });
   } catch (error) {
@@ -23,7 +23,7 @@ export async function GET(request) {
   const token = authHeader.split("Bearer ")[1];
 
   try {
-    const decodedToken = await admin.auth().verifyIdToken(token);
+    const decodedToken = await getAuth().verifyIdToken(token);
     const email = decodedToken.email;
 
     const ownerStatus = await isOwner(email);

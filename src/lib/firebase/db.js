@@ -1,10 +1,11 @@
 import "server-only";
-import * as admin from "firebase-admin";
+import { getApps, initializeApp } from "firebase-admin/app";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 // Ensure Firebase Admin is initialized
-if (!admin.apps?.length) {
+if (!getApps().length) {
   try {
-    admin.initializeApp({
+    initializeApp({
       projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
     });
   } catch (error) {
@@ -12,11 +13,11 @@ if (!admin.apps?.length) {
   }
 }
 
-export const dbAdmin = admin.firestore();
+export const dbAdmin = getFirestore();
 
 export async function createProject(userId, title = "New Project") {
   const projectRef = dbAdmin.collection("projects").doc();
-  const now = admin.firestore.FieldValue.serverTimestamp();
+  const now = FieldValue.serverTimestamp();
 
   await projectRef.set({
     title,
@@ -59,11 +60,11 @@ export async function addMessage(projectId, userId, role, content) {
   await messageRef.set({
     role,
     content,
-    timestamp: admin.firestore.FieldValue.serverTimestamp()
+    timestamp: FieldValue.serverTimestamp()
   });
 
   await dbAdmin.collection("projects").doc(projectId).update({
-    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    updatedAt: FieldValue.serverTimestamp()
   });
 
   return messageRef.id;
