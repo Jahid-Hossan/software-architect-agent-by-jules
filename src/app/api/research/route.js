@@ -6,9 +6,7 @@ import { executeAiRequest } from "@/lib/ai/routing";
 
 if (!getApps().length) {
   try {
-    initializeApp({
-      projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-    });
+    initializeApp({ projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID });
   } catch (error) {
     console.error("Firebase Admin initialization error", error);
   }
@@ -50,21 +48,28 @@ If the search fails or produces no usable evidence, you MUST reply with exactly:
 Do not invent links, prices, sources, or unsupported claims.`;
 
     const providers = [];
-    if (aiSettings) {
-      const mapProvider = (type) => {
-        if (type === 'gemini') return { type: 'gemini' };
-        if (type === 'omniroute') return { type: 'omniroute', apiKey: aiSettings.omnirouteApiKey, model: aiSettings.omnirouteModel };
-        if (type === 'self-hosted') return { type: 'self-hosted', baseUrl: aiSettings.selfHostedUrl, apiKey: aiSettings.selfHostedApiKey, model: aiSettings.selfHostedModel };
-        return null;
+    if (aiSettings?.routing) {
+      const { routing, providers: providerConfigs } = aiSettings;
+
+      const mapRouteToProvider = (routeConfig) => {
+        if (!routeConfig || routeConfig.provider === 'none') return null;
+
+        const type = routeConfig.provider;
+        const conf = providerConfigs?.[type] || {};
+
+        return {
+          type,
+          model: routeConfig.model,
+          apiKey: conf.apiKey,
+          baseUrl: conf.baseUrl
+        };
       };
 
-      const primary = mapProvider(aiSettings.primaryProvider);
+      const primary = mapRouteToProvider(routing.primary);
       if (primary) providers.push(primary);
 
-      if (aiSettings.fallbackProvider && aiSettings.fallbackProvider !== 'none') {
-         const fallback = mapProvider(aiSettings.fallbackProvider);
-         if (fallback) providers.push(fallback);
-      }
+      const fallback = mapRouteToProvider(routing.fallback);
+      if (fallback) providers.push(fallback);
     }
 
     const aiResponse = await executeAiRequest({

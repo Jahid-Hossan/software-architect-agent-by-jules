@@ -22,7 +22,7 @@ export default function BlueprintTab({ projectId, requirementsConfirmed }) {
 
       let aiSettings = null;
       try {
-        const saved = localStorage.getItem("architect_ai_settings");
+        const saved = localStorage.getItem("architect_ai_settings_v2");
         if (saved) aiSettings = JSON.parse(saved);
       } catch (e) {}
 

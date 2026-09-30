@@ -45,7 +45,7 @@ export default function InterviewTab({ projectId }) {
       const token = await user.getIdToken();
       let aiSettings = null;
       try {
-        const saved = localStorage.getItem("architect_ai_settings");
+        const saved = localStorage.getItem("architect_ai_settings_v2");
         if (saved) aiSettings = JSON.parse(saved);
       } catch (e) {
          console.error("Failed to parse local ai settings", e);

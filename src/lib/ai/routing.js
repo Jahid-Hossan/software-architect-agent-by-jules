@@ -5,17 +5,23 @@ import { GoogleGenAI } from "@google/genai";
  * Supports fallback across Google Gemini, OpenRouter/Omniroute, and Self-Hosted OpenAI-compatible endpoints.
  */
 
-async function callGemini(messages, systemInstruction, temperature, useSearch) {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  const model = "gemini-2.5-pro";
+async function callGemini(messages, systemInstruction, temperature, useSearch, config) {
+  // Use client-provided API key or fallback to server env
+  const apiKey = config?.apiKey || process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing Gemini API Key");
+  }
 
-  const config = {
+  const ai = new GoogleGenAI({ apiKey });
+  const model = config?.model || "gemini-2.5-pro";
+
+  const reqConfig = {
     systemInstruction,
     temperature,
   };
 
   if (useSearch) {
-    config.tools = [{ googleSearch: {} }];
+    reqConfig.tools = [{ googleSearch: {} }];
   }
 
   // Convert generic messages to Gemini format
@@ -27,7 +33,7 @@ async function callGemini(messages, systemInstruction, temperature, useSearch) {
   const response = await ai.models.generateContent({
     model,
     contents: geminiMessages,
-    config,
+    config: reqConfig,
   });
 
   return {
@@ -39,8 +45,8 @@ async function callGemini(messages, systemInstruction, temperature, useSearch) {
 async function callOpenAICompatible(messages, systemInstruction, temperature, config) {
   const { baseUrl, apiKey, model } = config;
 
-  if (!baseUrl || !apiKey) {
-    throw new Error(`Missing configuration for OpenAI compatible endpoint: ${baseUrl}`);
+  if (!baseUrl) {
+    throw new Error(`Missing Base URL configuration for OpenAI compatible endpoint.`);
   }
 
   // Convert generic messages to OpenAI format
@@ -60,10 +66,10 @@ async function callOpenAICompatible(messages, systemInstruction, temperature, co
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`
+      ...(apiKey && { "Authorization": `Bearer ${apiKey}` })
     },
     body: JSON.stringify({
-      model: model || "default", // Some self-hosted don't care, OpenRouter requires it
+      model: model || "default", // OpenRouter requires model, local servers might not
       messages: oaiMessages,
       temperature
     })
@@ -90,7 +96,7 @@ export async function executeAiRequest({
 }) {
   if (!providers || providers.length === 0) {
     // Default to standard Gemini if no routing config is provided
-    return callGemini(messages, systemInstruction, temperature, useSearch);
+    return callGemini(messages, systemInstruction, temperature, useSearch, { model: "gemini-2.5-pro" });
   }
 
   let lastError = null;
@@ -99,21 +105,24 @@ export async function executeAiRequest({
   for (const provider of providers) {
     try {
       if (provider.type === "gemini") {
-        return await callGemini(messages, systemInstruction, temperature, useSearch);
-      }
-
-      if (provider.type === "omniroute") {
-        return await callOpenAICompatible(messages, systemInstruction, temperature, {
-          baseUrl: provider.baseUrl || "https://openrouter.ai/api/v1", // Standard OpenRouter/Omniroute base
+        return await callGemini(messages, systemInstruction, temperature, useSearch, {
           apiKey: provider.apiKey,
-          model: provider.model || "anthropic/claude-3-haiku" // A fast default
+          model: provider.model
         });
       }
 
-      if (provider.type === "self-hosted") {
+      if (provider.type === "openrouter") {
+        return await callOpenAICompatible(messages, systemInstruction, temperature, {
+          baseUrl: "https://openrouter.ai/api/v1", // Fixed base URL for OpenRouter
+          apiKey: provider.apiKey,
+          model: provider.model
+        });
+      }
+
+      if (provider.type === "selfHosted") {
          return await callOpenAICompatible(messages, systemInstruction, temperature, {
           baseUrl: provider.baseUrl,
-          apiKey: provider.apiKey || "dummy-key", // some local hosts don't need a key
+          apiKey: provider.apiKey,
           model: provider.model
         });
       }
