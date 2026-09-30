@@ -5,11 +5,11 @@ import { useAuth } from "./AuthProvider";
 import { Send, Bot, User, Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
-export default function InterviewTab({ projectId }) {
+export default function InterviewTab({ projectId, stage }) {
   const { user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(true); // default to true while fetching history
+  const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef(null);
   const initialized = useRef(false);
@@ -18,15 +18,14 @@ export default function InterviewTab({ projectId }) {
     async function loadHistory() {
       if (!user || !projectId || projectId.startsWith("new-")) {
          setIsLoading(false);
-         // Rely on initialized ref to prevent duplicate default messages on unmount/remount
          if (!initialized.current) {
             initialized.current = true;
-            setMessages([
-              {
-                role: "model",
-                content: "What would you like to build, and who will use it?",
-              },
-            ]);
+            // Provide different initial contexts based on the current stage if creating fresh
+            const initialGreeting = stage === 'INTERVIEW'
+               ? "What would you like to build, and who will use it?"
+               : "Based on our discussion, let's explore technology stacks.";
+
+            setMessages([{ role: "model", content: initialGreeting }]);
          }
          return;
       }
@@ -43,15 +42,8 @@ export default function InterviewTab({ projectId }) {
            if (data.messages && data.messages.length > 0) {
               setMessages(data.messages);
            } else {
-              setMessages([
-                {
-                  role: "model",
-                  content: "What would you like to build, and who will use it?",
-                },
-              ]);
+              setMessages([{ role: "model", content: "What would you like to build, and who will use it?" }]);
            }
-        } else {
-           console.error("Failed to load chat history");
         }
       } catch (e) {
          console.error("Error loading chat history:", e);
@@ -61,7 +53,7 @@ export default function InterviewTab({ projectId }) {
     }
 
     loadHistory();
-  }, [projectId, user]);
+  }, [projectId, user, stage]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -82,9 +74,7 @@ export default function InterviewTab({ projectId }) {
       try {
         const saved = localStorage.getItem("architect_ai_settings_v3");
         if (saved) aiSettings = JSON.parse(saved);
-      } catch (e) {
-         console.error("Failed to parse local ai settings v3", e);
-      }
+      } catch (e) {}
 
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -95,7 +85,8 @@ export default function InterviewTab({ projectId }) {
         body: JSON.stringify({
           projectId,
           messages: newMessages,
-          aiSettings
+          aiSettings,
+          stage // Pass current pipeline stage to backend
         }),
       });
 
@@ -108,10 +99,7 @@ export default function InterviewTab({ projectId }) {
       setMessages([...newMessages, { role: "model", content: data.text }]);
     } catch (error) {
       console.error("Chat error", error);
-      setMessages([
-        ...newMessages,
-        { role: "system", content: `Error: ${error.message}. Please check your Provider Settings.` }
-      ]);
+      setMessages([...newMessages, { role: "system", content: `Error: ${error.message}` }]);
     } finally {
       setIsSending(false);
     }
@@ -119,7 +107,6 @@ export default function InterviewTab({ projectId }) {
 
   return (
     <div className="flex flex-col h-full bg-white rounded-lg border border-gray-200 overflow-hidden">
-      {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
         {isLoading && messages.length === 0 ? (
            <div className="flex justify-center items-center h-full text-gray-400">
@@ -172,14 +159,13 @@ export default function InterviewTab({ projectId }) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area */}
       <div className="p-4 border-t border-gray-200 bg-gray-50">
         <form onSubmit={sendMessage} className="flex gap-2">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Type your answer or ask a question..."
+            placeholder={`Type your response to the ${stage.toLowerCase()} agent...`}
             disabled={isSending || isLoading}
             className="flex-1 bg-white border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
           />

@@ -13,6 +13,33 @@ if (!getApps().length) {
   }
 }
 
+const STAGE_PROMPTS = {
+  INTERVIEW: `You are an Architect AI — Software Research & Planning Agent in the INTERVIEW stage.
+Your goal: Gather project requirements, scope, target audience, and constraints.
+RULES:
+- Respond in the user's language.
+- Ask exactly ONE important question at a time.
+- Adapt follow-up questions to previous answers.
+- Explain technical concepts simply.
+- If this is the start of a new project, your first question MUST BE exactly: "What would you like to build, and who will use it?"
+- Do NOT generate a final blueprint or recommend specific tech stacks yet. Just gather business requirements.`,
+
+  TECHNOLOGY: `You are an Architect AI in the TECHNOLOGY STACK stage.
+Your goal: Review the gathered requirements and recommend the optimal technology stack (Frontend, Backend, Database, Hosting).
+RULES:
+- Propose 1-2 distinct stack options with clear trade-offs based on the user's requirements.
+- Focus on pragmatism, scalability, and modern standards.
+- Ask the user which stack they prefer or if they want to make any custom adjustments.`,
+
+  REVIEW: `You are an Architect AI in the REVIEW stage.
+Your goal: Summarize the final scope and the selected technology stack for final approval.`,
+
+  BLUEPRINT: `You are an Architect AI in the BLUEPRINT generation stage.
+Your goal: Draft a highly detailed software architecture blueprint.`,
+
+  CODING_PROMPT: `You are an Architect AI. Your goal: Generate a final Coding Agent Prompt.`
+};
+
 export async function POST(request) {
   try {
     const authHeader = request.headers.get("Authorization");
@@ -37,70 +64,40 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { messages, projectId, aiSettings } = body;
+    const { messages, projectId, aiSettings, stage } = body;
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: "Invalid messages format" }, { status: 400 });
     }
 
-    // --- Persist the incoming User Message ---
-    // Extract the latest message sent from the client (which should be the user's new prompt)
+    const activeStage = stage || 'INTERVIEW';
+
+    // Persist User Message
     const latestMessage = messages[messages.length - 1];
     if (latestMessage && latestMessage.role === 'user' && projectId && projectId.startsWith("new-") === false) {
        try {
            await addMessage(projectId, userId, 'user', latestMessage.content);
        } catch (dbErr) {
            console.error("[Chat API] Warning: Could not persist user message.", dbErr);
-           // We might still want to proceed with the AI response even if DB logging fails,
-           // but the user requested explicit logging of DB errors.
        }
-    } else if (projectId && projectId.startsWith("new-") === false) {
-       console.log("[Chat API] Warning: latest message is not from user, skipping user DB insert.");
     }
 
-    const systemInstruction = `You are an Architect AI — Software Research & Planning Agent.
-Your purpose is to help a user turn a rough software idea into researched requirements, an explicitly confirmed scope, a detailed implementation blueprint, and a self-contained prompt for a coding agent.
-
-CORE RULES:
-- Understand the user's goal before recommending an architecture.
-- Respond in the user's language (including Bangla and English).
-- Ask exactly ONE important question at a time, or at most TWO closely related questions.
-- Adapt follow-up questions to previous answers.
-- Offer 2 or 3 meaningful options when helpful.
-- Avoid repeating answered questions.
-- Explain technical concepts simply.
-- Decide routine technical defaults yourself instead of asking the user to choose every library.
-- Keep essential features separate from future improvements.
-- If this is the start of a new project, your first question MUST BE exactly: "What would you like to build, and who will use it?"
-- Do NOT generate a final blueprint here. Your goal is just to gather requirements and build context.`;
+    const systemInstruction = STAGE_PROMPTS[activeStage] || STAGE_PROMPTS.INTERVIEW;
 
     const providers = [];
     if (aiSettings?.routing && Array.isArray(aiSettings?.providers)) {
       const { routing, providers: providerList } = aiSettings;
-
       const mapRouteToProvider = (routeConfig) => {
         if (!routeConfig || routeConfig.providerId === 'none') return null;
-
         const provDef = providerList.find(p => p.id === routeConfig.providerId);
         if (!provDef) return null;
-
-        console.log(`[Chat API] Mapping route config to provider. ID: ${provDef.id}, Type: ${provDef.type}, Model: ${routeConfig.modelSlug}`);
-
-        return {
-          type: provDef.type,
-          model: routeConfig.modelSlug,
-          apiKey: provDef.apiKey,
-          baseUrl: provDef.baseUrl
-        };
+        return { type: provDef.type, model: routeConfig.modelSlug, apiKey: provDef.apiKey, baseUrl: provDef.baseUrl };
       };
 
       const primary = mapRouteToProvider(routing.primary);
       if (primary) providers.push(primary);
-
       const fallback = mapRouteToProvider(routing.fallback);
       if (fallback) providers.push(fallback);
-    } else {
-      console.log(`[Chat API] Warning: aiSettings was missing or providers was not an array. Falling back to default Gemini.`);
     }
 
     const aiResponse = await executeAiRequest({
@@ -111,7 +108,7 @@ CORE RULES:
       providers
     });
 
-    // --- Persist the Assistant's Response ---
+    // Persist Assistant Message
     if (aiResponse && aiResponse.text && projectId && projectId.startsWith("new-") === false) {
        try {
            await addMessage(projectId, userId, 'model', aiResponse.text);
