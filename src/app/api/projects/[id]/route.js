@@ -1,19 +1,18 @@
 import { NextResponse } from "next/server";
 import { isOwner } from "@/lib/firebase/server";
-import { getApps, initializeApp } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
+import { getAdminAuth } from "@/lib/firebase/admin";
 import { getProject, updateProject, deleteProject } from "@/lib/firebase/db";
 import { FieldValue } from "firebase-admin/firestore";
-
-if (!getApps().length) {
-  try { initializeApp({ projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID }); } catch (e) {}
-}
 
 async function authenticate(request) {
   const authHeader = request.headers.get("Authorization");
   if (!authHeader || !authHeader.startsWith("Bearer ")) throw new Error("Unauthorized");
   const token = authHeader.split("Bearer ")[1];
-  const decodedToken = await getAuth().verifyIdToken(token);
+
+  const adminAuth = getAdminAuth();
+  if (!adminAuth) throw new Error("Firebase Admin not configured");
+
+  const decodedToken = await adminAuth.verifyIdToken(token);
   if (!(await isOwner(decodedToken.email))) throw new Error("Forbidden");
   return decodedToken.uid;
 }
@@ -35,7 +34,6 @@ export async function PATCH(request, { params }) {
     const { id } = params;
     const updates = await request.json();
 
-    // Convert string dates to Firestore Timestamps if necessary (like requirementsConfirmedAt)
     if (updates.requirementsConfirmedAt === 'NOW') {
        updates.requirementsConfirmedAt = FieldValue.serverTimestamp();
     } else if (updates.requirementsConfirmedAt === null) {

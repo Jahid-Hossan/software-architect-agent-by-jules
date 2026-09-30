@@ -22,9 +22,12 @@ export default function BlueprintTab({ project, onBlueprintUpdated }) {
   const [activeTab, setActiveTab] = useState("architecture");
 
   useEffect(() => {
-     if (project?.blueprint) {
-        setBlueprint(project.blueprint);
-     }
+     const timer = setTimeout(() => {
+       if (project?.blueprint) {
+          setBlueprint(project.blueprint);
+       }
+     }, 0);
+     return () => clearTimeout(timer);
   }, [project]);
 
   const generateBlueprint = async () => {

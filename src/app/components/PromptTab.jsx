@@ -13,9 +13,12 @@ export default function PromptTab({ project, onPromptUpdated }) {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-     if (project?.codingPrompt) {
-        setPromptContent(project.codingPrompt);
-     }
+     const timer = setTimeout(() => {
+        if (project?.codingPrompt) {
+           setPromptContent(project.codingPrompt);
+        }
+     }, 0);
+     return () => clearTimeout(timer);
   }, [project]);
 
   const generatePrompt = async () => {
@@ -59,7 +62,6 @@ export default function PromptTab({ project, onPromptUpdated }) {
         setTimeout(() => setIsCopied(false), 2000);
      } catch (err) {
         console.error("Failed to copy text: ", err);
-        // Fallback
         const textArea = document.createElement("textarea");
         textArea.value = promptContent;
         document.body.appendChild(textArea);
@@ -68,8 +70,8 @@ export default function PromptTab({ project, onPromptUpdated }) {
             document.execCommand('copy');
             setIsCopied(true);
             setTimeout(() => setIsCopied(false), 2000);
-        } catch (err) {
-            console.error('Fallback: Oops, unable to copy', err);
+        } catch (copyErr) {
+            console.error('Fallback: Oops, unable to copy', copyErr);
             alert("Copy failed. Please select the text manually.");
         }
         document.body.removeChild(textArea);

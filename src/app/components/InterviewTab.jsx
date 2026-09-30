@@ -16,6 +16,29 @@ export default function InterviewTab({ project }) {
   const messagesEndRef = useRef(null);
   const initialized = useRef(false);
 
+  const sendSystemTrigger = async (triggerText) => {
+     setIsSending(true);
+     try {
+       const token = await user.getIdToken();
+       let aiSettings = null;
+       try { const saved = localStorage.getItem("architect_ai_settings_v3"); if (saved) aiSettings = JSON.parse(saved); } catch (e) {}
+
+       const res = await fetch("/api/chat", {
+         method: "POST",
+         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+         body: JSON.stringify({ projectId, messages: [{ role: 'user', content: triggerText }], aiSettings }),
+       });
+       if (!res.ok) throw new Error("Failed to initialize interview.");
+
+       const data = await res.json();
+       setMessages([{ role: "model", content: data.message, metadata: { options: data.options } }]);
+     } catch (e) {
+        console.error(e);
+     } finally {
+        setIsSending(false);
+     }
+  };
+
   useEffect(() => {
     async function loadHistory() {
       if (!user || !projectId || projectId === 'new') {
@@ -47,34 +70,12 @@ export default function InterviewTab({ project }) {
       }
     }
     loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, user]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading, isSending]);
-
-  const sendSystemTrigger = async (triggerText) => {
-     setIsSending(true);
-     try {
-       const token = await user.getIdToken();
-       let aiSettings = null;
-       try { const saved = localStorage.getItem("architect_ai_settings_v3"); if (saved) aiSettings = JSON.parse(saved); } catch (e) {}
-
-       const res = await fetch("/api/chat", {
-         method: "POST",
-         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-         body: JSON.stringify({ projectId, messages: [{ role: 'user', content: triggerText }], aiSettings }),
-       });
-       if (!res.ok) throw new Error("Failed to initialize interview.");
-
-       const data = await res.json();
-       setMessages([{ role: "model", content: data.message, metadata: { options: data.options } }]);
-     } catch (e) {
-        console.error(e);
-     } finally {
-        setIsSending(false);
-     }
-  };
 
   const sendMessage = async (e, forcedContent = null) => {
     e?.preventDefault();
@@ -94,7 +95,7 @@ export default function InterviewTab({ project }) {
         if (saved) aiSettings = JSON.parse(saved);
       } catch (e) {}
 
-      // Strip metadata before sending to AI to save context window (optional)
+      // Strip metadata before sending to AI to save context window
       const cleanMessages = newMessages.map(m => ({ role: m.role, content: m.content }));
 
       const res = await fetch("/api/chat", {

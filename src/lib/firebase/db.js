@@ -1,16 +1,6 @@
 import "server-only";
-import { getApps, initializeApp } from "firebase-admin/app";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
-
-if (!getApps().length) {
-  try {
-    initializeApp({ projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID });
-  } catch (error) {
-    console.error("Firebase Admin initialization error in db.js", error);
-  }
-}
-
-export const dbAdmin = getFirestore();
+import { FieldValue } from "firebase-admin/firestore";
+import { getAdminDb } from "./admin";
 
 export const PIPELINE_STAGES = {
   IDEA: 'IDEA',
@@ -22,7 +12,8 @@ export const PIPELINE_STAGES = {
 };
 
 export async function createProject(userId, title = "New Project", initialIdea = "") {
-  const projectRef = dbAdmin.collection("projects").doc();
+  const adminDb = getAdminDb();
+  const projectRef = adminDb.collection("projects").doc();
   const now = FieldValue.serverTimestamp();
 
   await projectRef.set({
@@ -33,7 +24,6 @@ export async function createProject(userId, title = "New Project", initialIdea =
     createdAt: now,
     updatedAt: now,
 
-    // Project State
     memory: {
        userDecisions: [],
        recommendations: [],
@@ -59,7 +49,8 @@ export async function createProject(userId, title = "New Project", initialIdea =
 }
 
 export async function getProjects(userId) {
-  const snapshot = await dbAdmin.collection("projects")
+  const adminDb = getAdminDb();
+  const snapshot = await adminDb.collection("projects")
     .where("ownerId", "==", userId)
     .orderBy("updatedAt", "desc")
     .get();
@@ -77,7 +68,8 @@ export async function getProjects(userId) {
 }
 
 export async function getProject(projectId, userId) {
-  const doc = await dbAdmin.collection("projects").doc(projectId).get();
+  const adminDb = getAdminDb();
+  const doc = await adminDb.collection("projects").doc(projectId).get();
   if (!doc.exists) return null;
 
   const data = doc.data();
@@ -93,26 +85,25 @@ export async function getProject(projectId, userId) {
 }
 
 export async function updateProject(projectId, userId, updates) {
-  await getProject(projectId, userId); // check auth
-
+  await getProject(projectId, userId);
+  const adminDb = getAdminDb();
   const updateData = { ...updates, updatedAt: FieldValue.serverTimestamp() };
-  await dbAdmin.collection("projects").doc(projectId).update(updateData);
+  await adminDb.collection("projects").doc(projectId).update(updateData);
   return { success: true };
 }
 
 export async function deleteProject(projectId, userId) {
-  await getProject(projectId, userId); // check auth
-
-  await dbAdmin.collection("projects").doc(projectId).delete();
+  await getProject(projectId, userId);
+  const adminDb = getAdminDb();
+  await adminDb.collection("projects").doc(projectId).delete();
   return { success: true };
 }
 
 export async function addMessage(projectId, userId, role, content, metadata = null) {
   try {
     await getProject(projectId, userId);
-
-    console.log(`[Chat DB] Saving ${role} message for project: ${projectId}`);
-    const messageRef = dbAdmin.collection("projects").doc(projectId).collection("messages").doc();
+    const adminDb = getAdminDb();
+    const messageRef = adminDb.collection("projects").doc(projectId).collection("messages").doc();
     const data = {
       role,
       content,
@@ -121,12 +112,8 @@ export async function addMessage(projectId, userId, role, content, metadata = nu
     if (metadata) data.metadata = metadata;
 
     await messageRef.set(data);
+    await adminDb.collection("projects").doc(projectId).update({ updatedAt: FieldValue.serverTimestamp() });
 
-    await dbAdmin.collection("projects").doc(projectId).update({
-      updatedAt: FieldValue.serverTimestamp()
-    });
-
-    console.log(`[Chat DB] ${role} message saved successfully.`);
     return messageRef.id;
   } catch (error) {
     console.error('[Chat DB Error] Failed to persist message:', error);
@@ -137,8 +124,8 @@ export async function addMessage(projectId, userId, role, content, metadata = nu
 export async function getMessages(projectId, userId) {
   try {
     await getProject(projectId, userId);
-
-    const snapshot = await dbAdmin.collection("projects")
+    const adminDb = getAdminDb();
+    const snapshot = await adminDb.collection("projects")
       .doc(projectId)
       .collection("messages")
       .orderBy("timestamp", "asc")

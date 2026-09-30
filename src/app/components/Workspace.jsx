@@ -36,7 +36,6 @@ export default function Workspace() {
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const initialFetchDone = useRef(false);
 
-  // Fetch list of projects
   useEffect(() => {
     const fetchProjects = async () => {
        if (!user) return;
@@ -59,10 +58,10 @@ export default function Workspace() {
           setIsLoadingProjects(false);
        }
     };
+
     fetchProjects();
   }, [user, activeProjectId]);
 
-  // Fetch full state of the active project
   const loadActiveProjectDetails = async () => {
       if (!activeProjectId || !user || activeProjectId === 'new') return;
       try {
@@ -78,11 +77,15 @@ export default function Workspace() {
   };
 
   useEffect(() => {
-     if (activeProjectId === 'new') {
-        setActiveProjectState({ id: 'new', status: PIPELINE_STAGES.IDEA });
-     } else {
-        loadActiveProjectDetails();
-     }
+     const timer = setTimeout(() => {
+        if (activeProjectId === 'new') {
+           setActiveProjectState({ id: 'new', status: PIPELINE_STAGES.IDEA });
+        } else {
+           loadActiveProjectDetails();
+        }
+     }, 0);
+     return () => clearTimeout(timer);
+     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProjectId, user]);
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
@@ -313,7 +316,6 @@ export default function Workspace() {
                     { id: PIPELINE_STAGES.BLUEPRINT, label: "Blueprint", icon: FileText },
                     { id: PIPELINE_STAGES.PROMPT, label: "Prompt", icon: FileCode },
                   ].map((stage, idx) => {
-                     // Offset by 1 because IDEA is stage 0 but not shown in this stepper
                      const currentIdx = STAGE_ORDER.indexOf(activeProjectState.status);
                      const stageIdx = STAGE_ORDER.indexOf(stage.id);
                      const isCurrent = currentIdx === stageIdx;
@@ -326,7 +328,6 @@ export default function Workspace() {
                               isCurrent ? "bg-blue-600 ring-2 ring-blue-200" : isPast ? "bg-green-500 hover:bg-green-600" : "bg-gray-300 hover:bg-gray-400"
                            )}
                            onClick={() => {
-                              // Allow navigation to past phases
                               if (isPast || (activeProjectState.requirementsConfirmed && stageIdx > currentIdx)) {
                                  advanceStage(activeProjectState.id, stage.id);
                               }

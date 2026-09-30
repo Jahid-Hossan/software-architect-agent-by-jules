@@ -1,17 +1,8 @@
 import { NextResponse } from "next/server";
 import { isOwner } from "@/lib/firebase/server";
-import { getApps, initializeApp } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
+import { getAdminAuth } from "@/lib/firebase/admin";
 import { executeAiRequest } from "@/lib/ai/routing";
 import { addMessage, getProject } from "@/lib/firebase/db";
-
-if (!getApps().length) {
-  try {
-    initializeApp({ projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID });
-  } catch (error) {
-    console.error("Firebase Admin initialization error", error);
-  }
-}
 
 const INTERVIEW_SYSTEM_PROMPT = `You are a strict, focused Software Architect conducting a dynamic interview to define project requirements.
 
@@ -48,7 +39,10 @@ export async function POST(request) {
     const token = authHeader.split("Bearer ")[1];
     let email, userId;
     try {
-      const decodedToken = await getAuth().verifyIdToken(token);
+      const adminAuth = getAdminAuth();
+      if (!adminAuth) throw new Error("Firebase Admin not configured");
+
+      const decodedToken = await adminAuth.verifyIdToken(token);
       email = decodedToken.email;
       userId = decodedToken.uid;
     } catch (e) {
@@ -67,7 +61,6 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid messages format" }, { status: 400 });
     }
 
-    // Persist User Message
     const latestMessage = messages[messages.length - 1];
     if (latestMessage && latestMessage.role === 'user' && projectId && projectId !== 'new') {
        try {
@@ -77,7 +70,6 @@ export async function POST(request) {
        }
     }
 
-    // Inject initial project idea if this is the first real question
     let systemInstruction = INTERVIEW_SYSTEM_PROMPT;
     if (projectId && projectId !== 'new') {
        try {
@@ -106,12 +98,11 @@ export async function POST(request) {
     const aiResponse = await executeAiRequest({
       messages,
       systemInstruction,
-      temperature: 0.2, // Low temp for more stable JSON parsing
+      temperature: 0.2,
       useSearch: false,
       providers
     });
 
-    // Clean up potentially bad markdown wrapping from the model
     let cleanJsonStr = aiResponse.text.trim();
     if (cleanJsonStr.startsWith("```json")) {
         cleanJsonStr = cleanJsonStr.replace(/^```json/, '').replace(/```$/, '').trim();
@@ -124,11 +115,9 @@ export async function POST(request) {
         parsedResponse = JSON.parse(cleanJsonStr);
     } catch(e) {
         console.error("Failed to parse AI JSON response. Raw output:", aiResponse.text);
-        // Fallback gracefully if AI failed to format JSON
         parsedResponse = { message: aiResponse.text, options: [] };
     }
 
-    // Persist Assistant Message
     if (projectId && projectId !== 'new') {
        try {
            await addMessage(projectId, userId, 'model', parsedResponse.message, { options: parsedResponse.options });

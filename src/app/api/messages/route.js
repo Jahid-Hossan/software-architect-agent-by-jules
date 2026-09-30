@@ -1,16 +1,7 @@
 import { NextResponse } from "next/server";
 import { isOwner } from "@/lib/firebase/server";
-import { getApps, initializeApp } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
+import { getAdminAuth } from "@/lib/firebase/admin";
 import { getMessages } from "@/lib/firebase/db";
-
-if (!getApps().length) {
-  try {
-    initializeApp({ projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID });
-  } catch (error) {
-    console.error("Firebase Admin initialization error", error);
-  }
-}
 
 export async function GET(request) {
   try {
@@ -23,7 +14,10 @@ export async function GET(request) {
     let email;
     let userId;
     try {
-      const decodedToken = await getAuth().verifyIdToken(token);
+      const adminAuth = getAdminAuth();
+      if (!adminAuth) throw new Error("Firebase Admin not configured");
+
+      const decodedToken = await adminAuth.verifyIdToken(token);
       email = decodedToken.email;
       userId = decodedToken.uid;
     } catch (e) {

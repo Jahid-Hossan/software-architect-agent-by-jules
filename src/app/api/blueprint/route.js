@@ -1,13 +1,8 @@
 import { NextResponse } from "next/server";
 import { isOwner } from "@/lib/firebase/server";
-import { getApps, initializeApp } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
+import { getAdminAuth } from "@/lib/firebase/admin";
 import { getProject, updateProject } from "@/lib/firebase/db";
 import { executeAiRequest } from "@/lib/ai/routing";
-
-if (!getApps().length) {
-  try { initializeApp({ projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID }); } catch (e) {}
-}
 
 const BLUEPRINT_SYSTEM_PROMPT = `You are a Master Software Architect.
 Your task is to generate a comprehensive, highly detailed software blueprint based on the strictly confirmed Requirements Specification.
@@ -71,7 +66,11 @@ export async function POST(request) {
     const authHeader = request.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const token = authHeader.split("Bearer ")[1];
-    const decodedToken = await getAuth().verifyIdToken(token);
+
+    const adminAuth = getAdminAuth();
+    if (!adminAuth) throw new Error("Firebase Admin not configured");
+
+    const decodedToken = await adminAuth.verifyIdToken(token);
     if (!(await isOwner(decodedToken.email))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const userId = decodedToken.uid;
 

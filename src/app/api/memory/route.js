@@ -1,13 +1,8 @@
 import { NextResponse } from "next/server";
 import { isOwner } from "@/lib/firebase/server";
-import { getApps, initializeApp } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
-import { getProject, updateProject, getMessages } from "@/lib/firebase/db";
+import { getAdminAuth } from "@/lib/firebase/admin";
+import { updateProject, getMessages } from "@/lib/firebase/db";
 import { executeAiRequest } from "@/lib/ai/routing";
-
-if (!getApps().length) {
-  try { initializeApp({ projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID }); } catch (e) {}
-}
 
 const MEMORY_SYSTEM_PROMPT = `You are a Project Memory Extraction Agent.
 Your task is to analyze the entire conversation history between the User and the Architect AI and extract specific structured information into JSON format.
@@ -41,7 +36,11 @@ export async function POST(request) {
     const authHeader = request.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const token = authHeader.split("Bearer ")[1];
-    const decodedToken = await getAuth().verifyIdToken(token);
+
+    const adminAuth = getAdminAuth();
+    if (!adminAuth) throw new Error("Firebase Admin not configured");
+
+    const decodedToken = await adminAuth.verifyIdToken(token);
     if (!(await isOwner(decodedToken.email))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const userId = decodedToken.uid;
 
@@ -90,7 +89,6 @@ export async function POST(request) {
         throw new Error("AI failed to return valid JSON memory.");
     }
 
-    // Persist to project document
     await updateProject(projectId, userId, { memory });
 
     return NextResponse.json({ memory });
