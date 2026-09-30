@@ -108,7 +108,7 @@ export async function executeAiRequest({
   providers = []
 }) {
   if (!providers || providers.length === 0) {
-    // Default to standard Gemini if no routing config is provided
+    console.log(`[Router Execution] Warning: No providers explicitly defined. Falling back to base Gemini config.`);
     return callGemini(messages, systemInstruction, temperature, useSearch, { model: "gemini-3.1-pro-preview" });
   }
 
@@ -116,6 +116,8 @@ export async function executeAiRequest({
 
   for (const provider of providers) {
     try {
+      console.log(`[Router Execution] Attempting active provider type: ${provider.type}, target model: ${provider.model}`);
+
       if (provider.type === "gemini-native" || provider.type === "gemini") {
         return await callGemini(messages, systemInstruction, temperature, useSearch, {
           apiKey: provider.apiKey,
@@ -123,7 +125,7 @@ export async function executeAiRequest({
         });
       }
 
-      if (provider.type === "openai-compatible" || provider.type === "openrouter" || provider.type === "selfHosted") {
+      if (provider.type === "openai-compatible" || provider.type === "openrouter" || provider.type === "selfHosted" || provider.type === "omni") {
         const apiKey = provider.apiKey || (provider.baseUrl.includes('omni') ? (process.env.OMNI_API_KEY || process.env.OPENROUTER_API_KEY) : null);
 
         return await callOpenAICompatible(messages, systemInstruction, temperature, {
@@ -132,8 +134,10 @@ export async function executeAiRequest({
           model: provider.model
         });
       }
+
+      console.error(`[Router Execution] Unknown provider type defined: ${provider.type}`);
     } catch (error) {
-      console.error(`Provider [${provider.type}] failed:`, error.message);
+      console.error(`[Router Execution] Provider [${provider.type}] failed with error:`, error.message);
       lastError = error;
     }
   }

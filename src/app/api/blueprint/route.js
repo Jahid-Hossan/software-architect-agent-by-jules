@@ -62,7 +62,7 @@ If a section is not applicable, use "not applicable" with a reason.
 Format the output in clean Markdown.`;
 
     const providers = [];
-    if (aiSettings?.routing && aiSettings?.providers) {
+    if (aiSettings?.routing && Array.isArray(aiSettings?.providers)) {
       const { routing, providers: providerList } = aiSettings;
 
       const mapRouteToProvider = (routeConfig) => {
@@ -70,6 +70,8 @@ Format the output in clean Markdown.`;
 
         const provDef = providerList.find(p => p.id === routeConfig.providerId);
         if (!provDef) return null;
+
+        console.log(`[Blueprint API] Mapping route config to provider. ID: ${provDef.id}, Type: ${provDef.type}, Model: ${routeConfig.modelSlug}`);
 
         return {
           type: provDef.type,
@@ -84,6 +86,8 @@ Format the output in clean Markdown.`;
 
       const fallback = mapRouteToProvider(routing.fallback);
       if (fallback) providers.push(fallback);
+    } else {
+      console.log(`[Blueprint API] Warning: aiSettings was missing or providers was not an array. Falling back to default Gemini.`);
     }
 
     const aiResponse = await executeAiRequest({

@@ -13,7 +13,6 @@ export default function InterviewTab({ projectId }) {
   const messagesEndRef = useRef(null);
   const initialized = useRef(false);
 
-  // Auto-start if empty
   useEffect(() => {
     if (messages.length === 0 && !isLoading && !initialized.current) {
       initialized.current = true;
@@ -45,11 +44,13 @@ export default function InterviewTab({ projectId }) {
       const token = await user.getIdToken();
       let aiSettings = null;
       try {
-        const saved = localStorage.getItem("architect_ai_settings_v2");
+        const saved = localStorage.getItem("architect_ai_settings_v3"); // Updated to v3
         if (saved) aiSettings = JSON.parse(saved);
       } catch (e) {
-         console.error("Failed to parse local ai settings", e);
+         console.error("Failed to parse local ai settings v3", e);
       }
+
+      console.log("Client Dispatching Chat with Settings:", aiSettings?.routing?.primary);
 
       const res = await fetch("/api/chat", {
         method: "POST",

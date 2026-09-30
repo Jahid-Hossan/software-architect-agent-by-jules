@@ -57,7 +57,7 @@ CORE RULES:
 - Do NOT generate a final blueprint here. Your goal is just to gather requirements and build context.`;
 
     const providers = [];
-    if (aiSettings?.routing && aiSettings?.providers) {
+    if (aiSettings?.routing && Array.isArray(aiSettings?.providers)) {
       const { routing, providers: providerList } = aiSettings;
 
       const mapRouteToProvider = (routeConfig) => {
@@ -65,6 +65,8 @@ CORE RULES:
 
         const provDef = providerList.find(p => p.id === routeConfig.providerId);
         if (!provDef) return null;
+
+        console.log(`[Chat API] Mapping route config to provider. ID: ${provDef.id}, Type: ${provDef.type}, Model: ${routeConfig.modelSlug}`);
 
         return {
           type: provDef.type,
@@ -79,6 +81,8 @@ CORE RULES:
 
       const fallback = mapRouteToProvider(routing.fallback);
       if (fallback) providers.push(fallback);
+    } else {
+      console.log(`[Chat API] Warning: aiSettings was missing or providers was not an array. Falling back to default Gemini.`);
     }
 
     const aiResponse = await executeAiRequest({

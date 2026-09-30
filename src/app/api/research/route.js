@@ -48,7 +48,7 @@ If the search fails or produces no usable evidence, you MUST reply with exactly:
 Do not invent links, prices, sources, or unsupported claims.`;
 
     const providers = [];
-    if (aiSettings?.routing && aiSettings?.providers) {
+    if (aiSettings?.routing && Array.isArray(aiSettings?.providers)) {
       const { routing, providers: providerList } = aiSettings;
 
       const mapRouteToProvider = (routeConfig) => {
@@ -56,6 +56,8 @@ Do not invent links, prices, sources, or unsupported claims.`;
 
         const provDef = providerList.find(p => p.id === routeConfig.providerId);
         if (!provDef) return null;
+
+        console.log(`[Research API] Mapping route config to provider. ID: ${provDef.id}, Type: ${provDef.type}, Model: ${routeConfig.modelSlug}`);
 
         return {
           type: provDef.type,
@@ -70,6 +72,8 @@ Do not invent links, prices, sources, or unsupported claims.`;
 
       const fallback = mapRouteToProvider(routing.fallback);
       if (fallback) providers.push(fallback);
+    } else {
+      console.log(`[Research API] Warning: aiSettings was missing or providers was not an array. Falling back to default Gemini.`);
     }
 
     const aiResponse = await executeAiRequest({
