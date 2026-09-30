@@ -3,6 +3,7 @@ import { isOwner } from "@/lib/firebase/server";
 import { getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { executeAiRequest } from "@/lib/ai/routing";
+import { addMessage } from "@/lib/firebase/db";
 
 if (!getApps().length) {
   try {
@@ -21,9 +22,11 @@ export async function POST(request) {
 
     const token = authHeader.split("Bearer ")[1];
     let email;
+    let userId;
     try {
       const decodedToken = await getAuth().verifyIdToken(token);
       email = decodedToken.email;
+      userId = decodedToken.uid;
     } catch (e) {
       return NextResponse.json({ error: "Invalid token" }, { status: 401 });
     }
@@ -38,6 +41,21 @@ export async function POST(request) {
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: "Invalid messages format" }, { status: 400 });
+    }
+
+    // --- Persist the incoming User Message ---
+    // Extract the latest message sent from the client (which should be the user's new prompt)
+    const latestMessage = messages[messages.length - 1];
+    if (latestMessage && latestMessage.role === 'user' && projectId && projectId.startsWith("new-") === false) {
+       try {
+           await addMessage(projectId, userId, 'user', latestMessage.content);
+       } catch (dbErr) {
+           console.error("[Chat API] Warning: Could not persist user message.", dbErr);
+           // We might still want to proceed with the AI response even if DB logging fails,
+           // but the user requested explicit logging of DB errors.
+       }
+    } else if (projectId && projectId.startsWith("new-") === false) {
+       console.log("[Chat API] Warning: latest message is not from user, skipping user DB insert.");
     }
 
     const systemInstruction = `You are an Architect AI — Software Research & Planning Agent.
@@ -92,6 +110,15 @@ CORE RULES:
       useSearch: false,
       providers
     });
+
+    // --- Persist the Assistant's Response ---
+    if (aiResponse && aiResponse.text && projectId && projectId.startsWith("new-") === false) {
+       try {
+           await addMessage(projectId, userId, 'model', aiResponse.text);
+       } catch (dbErr) {
+           console.error("[Chat API] Warning: Could not persist assistant message.", dbErr);
+       }
+    }
 
     return NextResponse.json({ text: aiResponse.text });
 

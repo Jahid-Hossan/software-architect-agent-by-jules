@@ -54,18 +54,52 @@ export async function getProject(projectId, userId) {
 }
 
 export async function addMessage(projectId, userId, role, content) {
-  await getProject(projectId, userId);
+  try {
+    // Validate access first
+    await getProject(projectId, userId);
 
-  const messageRef = dbAdmin.collection("projects").doc(projectId).collection("messages").doc();
-  await messageRef.set({
-    role,
-    content,
-    timestamp: FieldValue.serverTimestamp()
-  });
+    console.log(`[Chat DB] Saving ${role} message for project: ${projectId}`);
+    const messageRef = dbAdmin.collection("projects").doc(projectId).collection("messages").doc();
+    await messageRef.set({
+      role,
+      content,
+      timestamp: FieldValue.serverTimestamp()
+    });
 
-  await dbAdmin.collection("projects").doc(projectId).update({
-    updatedAt: FieldValue.serverTimestamp()
-  });
+    await dbAdmin.collection("projects").doc(projectId).update({
+      updatedAt: FieldValue.serverTimestamp()
+    });
 
-  return messageRef.id;
+    console.log(`[Chat DB] ${role} message saved successfully.`);
+    return messageRef.id;
+  } catch (error) {
+    console.error('[Chat DB Error] Failed to persist message:', error);
+    throw error;
+  }
+}
+
+export async function getMessages(projectId, userId) {
+  try {
+    // Validate access
+    await getProject(projectId, userId);
+
+    const snapshot = await dbAdmin.collection("projects")
+      .doc(projectId)
+      .collection("messages")
+      .orderBy("timestamp", "asc")
+      .get();
+
+    return snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        role: data.role,
+        content: data.content,
+        timestamp: data.timestamp ? data.timestamp.toDate().toISOString() : new Date().toISOString()
+      };
+    });
+  } catch (error) {
+    console.error('[Chat DB Error] Failed to fetch messages:', error);
+    throw error;
+  }
 }
