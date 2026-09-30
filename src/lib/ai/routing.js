@@ -6,10 +6,9 @@ import { GoogleGenAI } from "@google/genai";
  */
 
 async function callGemini(messages, systemInstruction, temperature, useSearch, config) {
-  // Use client-provided API key or fallback to server env
   const apiKey = config?.apiKey || process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error("Missing Gemini API Key");
+    throw new Error("Missing Gemini API Key. Please configure it in Provider Settings.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -24,7 +23,6 @@ async function callGemini(messages, systemInstruction, temperature, useSearch, c
     reqConfig.tools = [{ googleSearch: {} }];
   }
 
-  // Convert generic messages to Gemini format
   const geminiMessages = messages.map(msg => ({
     role: msg.role === 'user' ? 'user' : 'model',
     parts: [{ text: msg.content }]
@@ -46,13 +44,12 @@ async function callOpenAICompatible(messages, systemInstruction, temperature, co
   let { baseUrl, apiKey, model } = config;
 
   if (!baseUrl) {
-    baseUrl = 'https://omni.appshub.app/v1'; // fallback to Omni gateway
+    throw new Error("Missing Base URL configuration for OpenAI compatible endpoint.");
   }
 
   // Ensure trailing slash is removed for clean URL construction
   baseUrl = baseUrl.replace(/\/$/, '');
 
-  // Convert generic messages to OpenAI format
   const oaiMessages = [];
   if (systemInstruction) {
     oaiMessages.push({ role: "system", content: systemInstruction });
@@ -81,19 +78,25 @@ async function callOpenAICompatible(messages, systemInstruction, temperature, co
 
   if (apiKey) {
     fetchOptions.headers["Authorization"] = `Bearer ${apiKey.trim()}`;
+  } else if (!baseUrl.includes("localhost") && !baseUrl.includes("127.0.0.1")) {
+     // If it's a remote URL and no API key is provided, fail fast to prevent unauthenticated network hangups
+     throw new Error("API Key is missing for this remote provider.");
   }
 
   const response = await fetch(`${baseUrl}/chat/completions`, fetchOptions);
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`API Error ${response.status}: ${errorText}`);
+    let errorText = "";
+    try {
+       errorText = await response.text();
+    } catch(e) {}
+    throw new Error(`API Error ${response.status}: ${errorText.substring(0, 200)}`);
   }
 
   const data = await response.json();
   return {
     text: data.choices[0].message.content,
-    metadata: null // Search grounding usually not supported natively in generic format
+    metadata: null
   };
 }
 
@@ -111,43 +114,29 @@ export async function executeAiRequest({
 
   let lastError = null;
 
-  // Attempt each provider in the fallback chain
   for (const provider of providers) {
     try {
-      if (provider.type === "gemini") {
+      if (provider.type === "gemini-native" || provider.type === "gemini") {
         return await callGemini(messages, systemInstruction, temperature, useSearch, {
           apiKey: provider.apiKey,
           model: provider.model
         });
       }
 
-      if (provider.type === "openrouter") {
-        const apiKey = provider.apiKey || process.env.OMNI_API_KEY || process.env.OPENROUTER_API_KEY;
-        if (!apiKey) {
-          throw new Error('Omni/OpenRouter API key is missing. Please configure it in Provider Settings.');
-        }
+      if (provider.type === "openai-compatible" || provider.type === "openrouter" || provider.type === "selfHosted") {
+        const apiKey = provider.apiKey || (provider.baseUrl.includes('omni') ? (process.env.OMNI_API_KEY || process.env.OPENROUTER_API_KEY) : null);
 
         return await callOpenAICompatible(messages, systemInstruction, temperature, {
-          baseUrl: provider.baseUrl || 'https://omni.appshub.app/v1',
-          apiKey: apiKey,
-          model: provider.model
-        });
-      }
-
-      if (provider.type === "selfHosted") {
-         return await callOpenAICompatible(messages, systemInstruction, temperature, {
           baseUrl: provider.baseUrl,
-          apiKey: provider.apiKey,
+          apiKey: apiKey,
           model: provider.model
         });
       }
     } catch (error) {
       console.error(`Provider [${provider.type}] failed:`, error.message);
       lastError = error;
-      // Continue to the next provider in the loop
     }
   }
 
-  // If we exhaust the loop, all providers failed
   throw new Error(`All configured AI providers failed. Last error: ${lastError?.message}`);
 }

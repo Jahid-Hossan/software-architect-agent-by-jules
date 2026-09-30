@@ -56,22 +56,21 @@ CORE RULES:
 - If this is the start of a new project, your first question MUST BE exactly: "What would you like to build, and who will use it?"
 - Do NOT generate a final blueprint here. Your goal is just to gather requirements and build context.`;
 
-    // Map new settings format to unified providers array
     const providers = [];
-    if (aiSettings?.routing) {
-      const { routing, providers: providerConfigs } = aiSettings;
+    if (aiSettings?.routing && aiSettings?.providers) {
+      const { routing, providers: providerList } = aiSettings;
 
       const mapRouteToProvider = (routeConfig) => {
-        if (!routeConfig || routeConfig.provider === 'none') return null;
+        if (!routeConfig || routeConfig.providerId === 'none') return null;
 
-        const type = routeConfig.provider;
-        const conf = providerConfigs?.[type] || {};
+        const provDef = providerList.find(p => p.id === routeConfig.providerId);
+        if (!provDef) return null;
 
         return {
-          type,
-          model: routeConfig.model,
-          apiKey: conf.apiKey,
-          baseUrl: conf.baseUrl
+          type: provDef.type,
+          model: routeConfig.modelSlug,
+          apiKey: provDef.apiKey,
+          baseUrl: provDef.baseUrl
         };
       };
 

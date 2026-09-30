@@ -62,20 +62,20 @@ If a section is not applicable, use "not applicable" with a reason.
 Format the output in clean Markdown.`;
 
     const providers = [];
-    if (aiSettings?.routing) {
-      const { routing, providers: providerConfigs } = aiSettings;
+    if (aiSettings?.routing && aiSettings?.providers) {
+      const { routing, providers: providerList } = aiSettings;
 
       const mapRouteToProvider = (routeConfig) => {
-        if (!routeConfig || routeConfig.provider === 'none') return null;
+        if (!routeConfig || routeConfig.providerId === 'none') return null;
 
-        const type = routeConfig.provider;
-        const conf = providerConfigs?.[type] || {};
+        const provDef = providerList.find(p => p.id === routeConfig.providerId);
+        if (!provDef) return null;
 
         return {
-          type,
-          model: routeConfig.model,
-          apiKey: conf.apiKey,
-          baseUrl: conf.baseUrl
+          type: provDef.type,
+          model: routeConfig.modelSlug,
+          apiKey: provDef.apiKey,
+          baseUrl: provDef.baseUrl
         };
       };
 
